@@ -1,0 +1,11 @@
+{
+  "name": "Retailer POS",
+  "short_name": "POS",
+  "description": "Point of sale, stock and money tracker",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#071b2e",
+  "theme_color": "#071b2e",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
