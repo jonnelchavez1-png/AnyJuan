@@ -1,0 +1,29 @@
+UPDATE 4 (includes everything from update 3, so use THIS one if you skipped 3)
+==============================================================================
+Contains: print only the receipt + paper sizes, Tax report, US dollar/time-zone quick setup,
+multi-line receipt header/footer, custom date range + red Void button on Sales,
+cash received/change (from update 3), roles refresh without re-login.
+
+STEP 0 - DATABASE (once, 1 minute)
+  Supabase -> SQL Editor -> New query -> open "0_SQL_run_first/update-tax-report.sql" in Notepad,
+  copy everything, paste, click Run. It should say: Tax report installed.
+  (Safe to run twice. It does not touch your data.)
+
+STEP 1 - GITHUB (inside the folder "110126 supabase pos"). For each numbered folder here:
+  open that folder on GitHub -> Add file -> Upload files -> drag the FILES (not the folder) -> Commit changes.
+
+  1_open_folder__src                 -> src                 (App.jsx, config.js, styles.css)
+  2_open_folder__src_slash_features  -> src/features        (Auth, Sales, Sell, Settings, TaxReport .jsx)
+  3_open_folder__src_slash_data      -> src/data            (repo.js)
+  4_open_folder__src_slash_ui        -> src/ui              (Receipt.jsx)
+  5_open_folder__src_slash_lib       -> src/lib             (print.js  <- NEW file, just upload it)
+  6_open_folder__docs                -> docs                (SETUP.md, optional)
+
+  Wait until Netlify shows "Published", then press Ctrl+F5 in the app.
+
+STEP 2 - IN SUPABASE (if not done yet): Authentication -> Sign In / Providers -> turn OFF "Allow new users to sign up".
+
+TRY IT
+  - Sell something for cash, click Print receipt: pick the paper, only the receipt prints.
+  - Menu -> Tax report.
+  - Settings -> Business -> "Quick setup by region" for US states.
