@@ -115,6 +115,10 @@ tr.dim td { color: var(--ink-soft); }
 .cart-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .25rem .5rem; padding: .55rem 0; border-bottom: 1px solid var(--line); }
 .cart-line .qty { display: flex; align-items: center; gap: .25rem; }
 .cart-line .qty input { width: 76px; min-height: 36px; text-align: center; }
+.cashbox { background: var(--foam); border: 1px solid var(--line); border-radius: 10px; padding: .75rem .75rem .5rem; margin-bottom: .75rem; }
+.cashbox .field { margin-bottom: .4rem; }
+.quick { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.change { display: flex; justify-content: space-between; align-items: baseline; font-size: 1.3rem; font-weight: 800; padding-top: .4rem; border-top: 1px dashed var(--ink-soft); }
 .totals { margin-top: .75rem; }
 .totals div { display: flex; justify-content: space-between; padding: .15rem 0; }
 .totals .grand { font-size: 1.4rem; font-weight: 800; border-top: 2px solid var(--ink); margin-top: .35rem; padding-top: .4rem; }
@@ -166,7 +170,9 @@ tr.dim td { color: var(--ink-soft); }
 .receipt h3 { text-align: center; }
 .receipt .line { display: flex; justify-content: space-between; gap: .5rem; }
 .receipt hr { border: 0; border-top: 1px dashed #000; margin: .5rem 0; }
-.receipt .center { text-align: center; }
+.receipt .center { text-align: center; white-space: pre-line; }
+.paper-pick { display: inline-flex; align-items: center; gap: .4rem; }
+.paper-pick select { width: auto; padding: .35rem .5rem; }
 
 /* responsive */
 @media (max-width: 1100px) { .sell { grid-template-columns: minmax(0, 1fr); } .cart { position: static; } }

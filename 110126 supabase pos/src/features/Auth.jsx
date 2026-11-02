@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { repo } from '../data/repo.js';
 import { Field } from '../ui/kit.jsx';
+import { checkPassword } from '../lib/password.js';
+import { config } from '../config.js';
 
 export function SetupNeeded({ problem }) {
   return (
@@ -32,7 +34,8 @@ export function Login() {
         await repo.signIn(email, password);
       } else if (mode === 'up') {
         if (!name.trim()) throw new Error('Please enter your name.');
-        if (password.length < 8) throw new Error('Use a password with at least 8 characters.');
+        const weak = checkPassword(password, email);
+        if (weak) throw new Error(weak);
         const res = await repo.signUp(email, password, name);
         setInfo(res?.session
           ? 'Account created. The owner must approve it before you can use the app.'
@@ -49,7 +52,7 @@ export function Login() {
   return (
     <div className="auth">
       <form className="card stack" onSubmit={submit} aria-labelledby="login-title">
-        <div><h1 id="login-title">Retailer POS</h1><p className="muted">{mode === 'in' ? 'Sign in to your business' : mode === 'up' ? 'Create an account' : 'Reset your password'}</p></div>
+        <div><h1 id="login-title">Retailer POS</h1><p className="muted">{mode === 'in' ? 'Sign in to your business. Accounts are created by the owner.' : mode === 'up' ? 'Create an account' : 'Reset your password'}</p></div>
         {info && <div className="notice good" role="status">{info}</div>}
         {error && <div className="notice bad" role="alert">{error}</div>}
         {mode === 'up' && <Field label="Your name" id="name"><input id="name" className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required /></Field>}
@@ -60,7 +63,7 @@ export function Login() {
         <button className="btn block" disabled={busy}>{busy ? 'Please wait…' : mode === 'in' ? 'Sign in' : mode === 'up' ? 'Create account' : 'Send reset link'}</button>
         <div className="row between small">
           {mode === 'in' ? <button type="button" className="btn ghost small" onClick={() => { setMode('reset'); setError(''); }}>Forgot password?</button> : <button type="button" className="btn ghost small" onClick={() => { setMode('in'); setError(''); }}>Back to sign in</button>}
-          {mode === 'in' && <button type="button" className="btn ghost small" onClick={() => { setMode('up'); setError(''); }}>New staff account</button>}
+          {mode === 'in' && config.allowSignup && <button type="button" className="btn ghost small" onClick={() => { setMode('up'); setError(''); }}>New staff account</button>}
         </div>
       </form>
     </div>
@@ -78,5 +81,30 @@ export function Waiting({ email, onCheck, onSignOut, checking }) {
         <button className="btn secondary" onClick={onSignOut}>Sign out</button>
       </div>
     </div></div>
+  );
+}
+
+/** Shown after someone clicks the reset link in their email: they choose a new password here. */
+export function SetNewPassword({ onDone, onSignOut }) {
+  const [pw, setPw] = useState(''); const [pw2, setPw2] = useState('');
+  const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  const save = async (e) => {
+    e.preventDefault(); setError('');
+    const weak = checkPassword(pw);
+    if (weak) return setError(weak);
+    if (pw !== pw2) return setError('The two passwords are not the same.');
+    setBusy(true);
+    try { await repo.updatePassword(pw); onDone(); } catch (err) { setError(err.message); setBusy(false); }
+  };
+  return (
+    <div className="auth"><form className="card stack" onSubmit={save}>
+      <h1>Choose a new password</h1>
+      <p className="muted">Pick a password only you know. At least 8 characters, with letters.</p>
+      {error && <div className="notice bad" role="alert">{error}</div>}
+      <Field label="New password" id="np1"><input id="np1" className="input" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} required /></Field>
+      <Field label="Type it again" id="np2"><input id="np2" className="input" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} required /></Field>
+      <button className="btn block" disabled={busy}>{busy ? 'Saving…' : 'Save new password'}</button>
+      <button type="button" className="btn ghost small" onClick={onSignOut}>Cancel and sign out</button>
+    </form></div>
   );
 }

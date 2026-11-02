@@ -7,15 +7,17 @@ import { useApp } from '../ui/context.js';
 import { Badge, ConfirmDialog, Dialog, ErrorBox, Field, Loading, PageHead, downloadCsv, useLoad } from '../ui/kit.jsx';
 import { ReceiptDialog } from '../ui/Receipt.jsx';
 
-const RANGES = ['today', 'week', 'month', 'year'];
+const RANGES = ['today', 'week', 'month', 'year', 'custom'];
 
 export default function Sales() {
   const { business, customers, can, money } = useApp();
   const [preset, setPreset] = useState('week');
+  const [custom, setCustom] = useState({ from: todayIn(business.timezone), to: todayIn(business.timezone) });
   const [filter, setFilter] = useState('all'); // all | unpaid | voided
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(null);
-  const range = useMemo(() => rangeFor(preset, { today: todayIn(business.timezone), weekStartsOn: business.week_starts_on }), [preset, business]);
+  const [openMode, setOpenMode] = useState('');
+  const range = useMemo(() => rangeFor(preset, { today: todayIn(business.timezone), weekStartsOn: business.week_starts_on, custom }), [preset, business, custom]);
   const { data, error, loading, reload } = useLoad(() => repo.listSales({
     fromInstant: startOfDayInstant(range.from, business.timezone).toISOString(),
     toInstant: startOfDayInstant(addDays(range.to, 1), business.timezone).toISOString(),
@@ -44,6 +46,12 @@ export default function Sales() {
       <div className="range-bar" role="group" aria-label="Period">
         {RANGES.map((r) => <button key={r} className="seg" aria-pressed={preset === r} onClick={() => setPreset(r)}>{PRESET_LABELS[r]}</button>)}
       </div>
+      {preset === 'custom' && (
+        <div className="row" style={{ marginBottom: '.75rem' }}>
+          <label>From <input className="input" type="date" value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} /></label>
+          <label>To <input className="input" type="date" value={custom.to} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} /></label>
+        </div>
+      )}
       <div className="row" style={{ marginBottom: '.75rem' }}>
         <input className="input" style={{ maxWidth: 280 }} type="search" aria-label="Search sales" placeholder="Invoice or customer" value={q} onChange={(e) => setQ(e.target.value)} />
         <select className="input" style={{ maxWidth: 200 }} aria-label="Show" value={filter} onChange={(e) => setFilter(e.target.value)}>
@@ -54,26 +62,30 @@ export default function Sales() {
       <ErrorBox error={error} onRetry={reload} />
       {loading && !data ? <Loading /> : !rows.length ? <div className="card empty">No sales found for this period.</div> : (
         <div className="card table-wrap"><table>
-          <thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th className="right">Total</th><th className="right">Balance</th><th>Status</th></tr></thead>
+          <thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th className="right">Total</th><th className="right">Balance</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody>{rows.map((s) => (
             <tr key={s.id} className={s.status === 'voided' ? 'dim' : ''}>
-              <td><button className="btn ghost small" onClick={() => setOpen(s)}>{s.invoice_number}</button></td>
+              <td><button className="btn ghost small" onClick={() => { setOpenMode(''); setOpen(s); }}>{s.invoice_number}</button></td>
               <td className="nowrap">{fmtDate(s.occurred_at)}</td><td>{custName(s.customer_id) || 'Walk-in'}</td>
               <td className="right num">{money(toCents(s.total))}</td>
               <td className="right num">{s.status === 'completed' && toCents(s.balance) > 0 ? money(toCents(s.balance)) : '–'}</td>
               <td>{s.status === 'voided' ? <Badge tone="bad">Voided</Badge> : toCents(s.balance) > 0 ? <Badge tone="warn">Unpaid</Badge> : <Badge tone="good">Paid</Badge>}</td>
+              <td className="nowrap">
+                <button className="btn secondary small" onClick={() => { setOpenMode(''); setOpen(s); }}>Open</button>{' '}
+                {s.status === 'completed' && can('voidSale') && <button className="btn danger small" aria-label={`Void ${s.invoice_number}`} onClick={() => { setOpenMode('void'); setOpen(s); }}>Void</button>}
+              </td>
             </tr>))}</tbody>
         </table></div>
       )}
-      {open && <SaleDetail sale={open} onClose={() => setOpen(null)} onChanged={() => { reload(); setOpen(null); }} can={can} />}
+      {open && <SaleDetail key={open.id + openMode} startMode={openMode} sale={open} onClose={() => setOpen(null)} onChanged={() => { reload(); setOpen(null); }} can={can} />}
     </>
   );
 }
 
-function SaleDetail({ sale, onClose, onChanged, can }) {
+function SaleDetail({ sale, onClose, onChanged, can, startMode = '' }) {
   const { methods, customers, money, toast, reload: reloadBase } = useApp();
   const { data, error, loading } = useLoad(() => repo.getSaleDetail(sale.id), [sale.id]);
-  const [mode, setMode] = useState(''); // '' | receipt | pay | void
+  const [mode, setMode] = useState(startMode); // '' | receipt | pay | void
   const balance = toCents(sale.balance);
   const methodName = (id) => methods.find((m) => m.id === id)?.name || 'Payment';
 
@@ -89,7 +101,7 @@ function SaleDetail({ sale, onClose, onChanged, can }) {
   if (mode === 'receipt' && receipt) return <ReceiptDialog receipt={receipt} onClose={() => setMode('')} />;
   if (mode === 'void') return <ConfirmDialog title={`Void ${sale.invoice_number}?`} danger askReason confirmLabel="Void sale"
     message="This cancels the whole sale and puts the items back in stock. It cannot be undone, but it stays in the history."
-    onConfirm={async (reason) => { await repo.voidSale(sale.id, reason); toast('Sale voided', 'good'); reloadBase(); onChanged(); }} onClose={() => setMode('')} />;
+    onConfirm={async (reason) => { await repo.voidSale(sale.id, reason); toast('Sale voided', 'good'); reloadBase(); onChanged(); }} onClose={() => (startMode ? onClose() : setMode(''))} />;
   if (mode === 'pay') return <PaymentDialog sale={sale} balance={balance} onClose={() => setMode('')} onDone={() => { reloadBase(); onChanged(); }} />;
 
   return (

@@ -19,6 +19,7 @@ export default function Sell() {
   const [payMode, setPayMode] = useState('full'); // full | partial | later
   const [methodId, setMethodId] = useState(methods.find((m) => m.active)?.id || '');
   const [partialText, setPartialText] = useState('');
+  const [received, setReceived] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -78,6 +79,14 @@ export default function Sell() {
   const payNow = payMode === 'full' ? calc.total : payMode === 'later' ? 0 : (partial ?? 0);
   const balance = calc.total - payNow;
   const customer = customers.find((c) => c.id === customerId);
+  // The "cash received / change" box appears when the chosen payment method is a cash one (its name contains "cash").
+  const methodName = methods.find((m) => m.id === methodId)?.name || '';
+  const showCash = payNow > 0 && /cash/i.test(methodName);
+  const receivedCents = received.trim() ? parseAmount(received) : null;
+  const changeDue = showCash && receivedCents != null && receivedCents >= payNow ? receivedCents - payNow : null;
+  const quick = showCash && payNow > 0
+    ? [...new Set([payNow, ...[5000, 10000, 50000, 100000].map((step) => Math.ceil(payNow / step) * step)])].filter((v) => v >= payNow).slice(0, 4)
+    : [];
   const cartInvalid = cart.some((l) => l.invalid);
 
   const charge = async () => {
@@ -87,6 +96,10 @@ export default function Sell() {
     if (discText.trim() && !discount) { setError('The discount is not a valid number.'); return; }
     if (payMode === 'partial' && (partial == null || partial <= 0 || partial >= calc.total)) { setError('Part payment must be more than 0 and less than the total.'); return; }
     if (payNow > 0 && !methodId) { setError('Choose how the customer paid.'); return; }
+    if (showCash && received.trim()) {
+      if (receivedCents == null) { setError('The cash received is not a valid amount.'); return; }
+      if (receivedCents < payNow) { setError(`Cash received (${money(receivedCents)}) is less than the amount to pay now (${money(payNow)}). Choose Part payment or enter more.`); return; }
+    }
     if (balance > 0 && !customerId) { setError('Choose a customer for a sale that is not fully paid, so you know who owes the balance.'); return; }
     setBusy(true);
     const { saleId, paymentId } = attempt.current;
@@ -104,9 +117,10 @@ export default function Sell() {
         items: cart.map((l, i) => { const p = byId.get(l.productId); return { name: p.name, quantity: fromMilli(l.qty), unitPrice: toCents(p.price), gross: calc.lines[i].gross }; }),
         subtotal: calc.subtotal, discount: calc.discount, tax: calc.tax, taxMode: calc.mode, taxName: business.tax_name, taxRate: Number(business.tax_rate),
         total: serverTotal, payments: payNow > 0 ? [{ method, amount: payNow }] : [], balance: Math.max(serverTotal - payNow, 0),
+        received: showCash && receivedCents != null ? receivedCents : null, change: changeDue,
       });
       toast(res.duplicate ? 'This sale was already recorded.' : 'Sale recorded', 'good');
-      setCart([]); setDiscText(''); setCustomerId(''); setPartialText(''); setNote(''); setPayMode('full');
+      setCart([]); setDiscText(''); setCustomerId(''); setPartialText(''); setReceived(''); setNote(''); setPayMode('full');
       attempt.current = { saleId: newId(), paymentId: newId() };
       reload();
     } catch (e) {
@@ -179,6 +193,15 @@ export default function Sell() {
               {payMode !== 'later' && <Field label="Method" id="meth"><select id="meth" className="input" value={methodId} onChange={(e) => setMethodId(e.target.value)}>{methods.filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></Field>}
             </div>
             {payMode === 'partial' && <Field label="Amount paid now" id="part"><input id="part" className="input" inputMode="decimal" value={partialText} onChange={(e) => setPartialText(e.target.value)} /></Field>}
+            {showCash && (
+              <div className="cashbox">
+                <Field label="Cash received" id="recv"><input id="recv" className="input" inputMode="decimal" value={received} onChange={(e) => setReceived(e.target.value)} placeholder={`Amount handed over`} /></Field>
+                <div className="quick" role="group" aria-label="Quick amounts">
+                  {quick.map((v, i) => <button key={v} type="button" className="chip" onClick={() => setReceived(String(fromCents(v)))}>{i === 0 ? `Exact ${money(v)}` : money(v)}</button>)}
+                </div>
+                <div className="change" aria-live="polite"><span>Change</span><span className="num">{changeDue != null ? money(changeDue) : receivedCents != null ? `Short ${money(payNow - receivedCents)}` : '–'}</span></div>
+              </div>
+            )}
             {balance > 0 && <div className="notice">Balance to collect later: <strong>{money(balance)}</strong></div>}
             <Field label="Note (optional)" id="note"><input id="note" className="input" value={note} onChange={(e) => setNote(e.target.value)} /></Field>
             {error && <div className="notice bad" role="alert">{error}</div>}

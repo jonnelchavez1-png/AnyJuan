@@ -13,6 +13,8 @@ export function friendlyError(error) {
   if (/failed to fetch|networkerror|load failed|network request failed/i.test(raw)) {
     return 'Cannot reach the server. Check the internet connection and try again.';
   }
+  if (/rate limit/i.test(raw)) return 'Too many emails were sent just now. Please wait an hour, or ask the owner to create or fix your account.';
+  if (/signups? (are |is )?(not allowed|disabled)/i.test(raw)) return 'New accounts are switched off. Ask the owner to create your account.';
   if (/jwt expired|invalid jwt|not authenticated/i.test(raw)) return 'Your sign-in has expired. Please sign in again.';
   if (/duplicate key value.*(name_key|sku_key|barcode_key)/i.test(raw)) return 'That name, SKU or barcode is already used.';
   if (/violates row-level security|permission denied/i.test(raw)) return 'You do not have permission to do that.';
@@ -39,7 +41,7 @@ export const repo = {
     return data?.session || null;
   },
   onAuthChange(callback) {
-    const { data } = sb().auth.onAuthStateChange((_event, session) => callback(session));
+    const { data } = sb().auth.onAuthStateChange((event, session) => callback(session, event));
     return () => data?.subscription?.unsubscribe?.();
   },
   async signIn(email, password) {
@@ -50,6 +52,10 @@ export const repo = {
   },
   async signOut() {
     await sb().auth.signOut();
+  },
+  /** Change the signed-in person's own password (also used after clicking an email reset link). */
+  async updatePassword(password) {
+    return run(sb().auth.updateUser({ password }));
   },
   async resetPassword(email) {
     return run(sb().auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin }));
@@ -155,6 +161,10 @@ export const repo = {
     return run(sb().rpc('get_dashboard', {
       p_from: range.from, p_to: range.to, p_prev_from: previous.from, p_prev_to: previous.to,
     }));
+  },
+
+  async getTaxReport(range) {
+    return run(sb().rpc('get_tax_report', { p_from: range.from, p_to: range.to }));
   },
 
   // ---------- team ----------

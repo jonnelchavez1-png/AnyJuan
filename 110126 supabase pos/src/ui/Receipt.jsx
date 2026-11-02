@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { Dialog } from './kit.jsx';
+import { PAPERS, printHtml, remember } from '../lib/print.js';
 import { formatQuantity, toMilli } from '../lib/money.js';
 import { useApp } from './context.js';
 
@@ -17,6 +19,8 @@ export function receiptText(r, business, money) {
   if (r.taxMode !== 'none') L.push(`${r.taxName || 'Tax'} ${r.taxRate}%${r.taxMode === 'inclusive' ? ' (included)' : ''}: ${money(r.tax)}`);
   L.push(`TOTAL: ${money(r.total)}`);
   for (const p of r.payments) L.push(`Paid (${p.method}): ${money(p.amount)}`);
+  if (r.received != null) L.push(`Cash received: ${money(r.received)}`);
+  if (r.change != null) L.push(`Change: ${money(r.change)}`);
   if (r.balance > 0) L.push(`BALANCE DUE: ${money(r.balance)}`);
   if (business.receipt_footer) L.push('', business.receipt_footer);
   return L.join('\n');
@@ -25,6 +29,11 @@ export function receiptText(r, business, money) {
 export function ReceiptDialog({ receipt, onClose }) {
   const { business, money, toast } = useApp();
   const r = receipt;
+  const [paper, setPaper] = useState(() => (PAPERS[remember('pos.paper')] ? remember('pos.paper') : '80'));
+  const print = () => {
+    const node = document.getElementById('receipt');
+    if (node) printHtml(node.outerHTML, { paper, title: r.invoice_number });
+  };
   const copy = async () => {
     try { await navigator.clipboard.writeText(receiptText(r, business, money)); toast('Receipt copied', 'good'); }
     catch { toast('Could not copy. Use Print instead.', 'bad'); }
@@ -32,7 +41,8 @@ export function ReceiptDialog({ receipt, onClose }) {
   return (
     <Dialog title="Receipt" onClose={onClose} actions={<>
       <button className="btn secondary" onClick={copy}>Copy text</button>
-      <button className="btn secondary" onClick={() => window.print()}>Print</button>
+      <label className="small paper-pick">Paper <select className="input" value={paper} aria-label="Paper size" onChange={(e) => { setPaper(e.target.value); remember('pos.paper', e.target.value); }}>{Object.entries(PAPERS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></label>
+      <button className="btn secondary" onClick={print}>Print receipt</button>
       <button className="btn" onClick={onClose}>Done</button>
     </>}>
       <div className="receipt" id="receipt">
@@ -55,6 +65,8 @@ export function ReceiptDialog({ receipt, onClose }) {
         {r.taxMode !== 'none' && <div className="line"><span>{r.taxName || 'Tax'} {r.taxRate}%{r.taxMode === 'inclusive' ? ' (included)' : ''}</span><span>{money(r.tax)}</span></div>}
         <div className="line"><strong>TOTAL</strong><strong>{money(r.total)}</strong></div>
         {r.payments.map((p, n) => <div className="line" key={n}><span>Paid · {p.method}</span><span>{money(p.amount)}</span></div>)}
+        {r.received != null && <div className="line"><span>Cash received</span><span>{money(r.received)}</span></div>}
+        {r.change != null && <div className="line"><strong>Change</strong><strong>{money(r.change)}</strong></div>}
         {r.balance > 0 && <div className="line"><strong>BALANCE DUE</strong><strong>{money(r.balance)}</strong></div>}
         {business.receipt_footer && <><hr /><div className="center">{business.receipt_footer}</div></>}
       </div>

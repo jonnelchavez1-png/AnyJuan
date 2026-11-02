@@ -1,0 +1,39 @@
+import { useState } from 'react';
+import { repo } from '../data/repo.js';
+import { checkPassword } from '../lib/password.js';
+import { useApp } from '../ui/context.js';
+import { Badge, Field, PageHead } from '../ui/kit.jsx';
+
+export default function Account() {
+  const { profile, user, toast } = useApp();
+  const [pw, setPw] = useState(''); const [pw2, setPw2] = useState('');
+  const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  const save = async (e) => {
+    e.preventDefault(); setError('');
+    const weak = checkPassword(pw, user.email);
+    if (weak) return setError(weak);
+    if (pw !== pw2) return setError('The two passwords are not the same.');
+    setBusy(true);
+    try { await repo.updatePassword(pw); setPw(''); setPw2(''); toast('Password changed', 'good'); }
+    catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
+  return (
+    <>
+      <PageHead title="My account" />
+      <div className="panels">
+        <section className="card"><h2>You</h2>
+          <p style={{ marginTop: '.6rem' }}><strong>{profile.name}</strong></p>
+          <p className="muted">{user.email}</p>
+          <p><Badge tone="good">{profile.role}</Badge></p>
+        </section>
+        <form className="card" onSubmit={save}><h2>Change my password</h2>
+          <p className="muted small">Use at least 8 characters with letters. Do not reuse a password from another website.</p>
+          {error && <div className="notice bad" role="alert">{error}</div>}
+          <Field label="New password" id="acc1"><input id="acc1" className="input" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
+          <Field label="Type it again" id="acc2"><input id="acc2" className="input" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></Field>
+          <button className="btn" disabled={busy || !pw}>{busy ? 'Saving…' : 'Save new password'}</button>
+        </form>
+      </div>
+    </>
+  );
+}

@@ -3,7 +3,20 @@ import { repo } from '../data/repo.js';
 import { useApp } from '../ui/context.js';
 import { Field, PageHead } from '../ui/kit.jsx';
 
-const CURRENCIES = ['PHP', 'USD', 'EUR', 'GBP', 'JPY', 'SGD', 'AUD', 'CAD', 'TWD', 'HKD', 'THB', 'IDR', 'MYR', 'VND', 'INR', 'AED', 'SAR'];
+// Currencies with 2 decimals (the app stores amounts to the cent). Others such as JPY or VND are not offered.
+const CURRENCIES = ['PHP', 'USD', 'EUR', 'GBP', 'SGD', 'AUD', 'CAD', 'HKD', 'THB', 'MYR', 'INR', 'AED', 'SAR'];
+
+// One-tap setups: they fill in currency, language/region, time zone and the first day of the week.
+const REGIONS = [
+  { label: 'United States – Eastern (New York, Florida…)', currency: 'USD', locale: 'en-US', timezone: 'America/New_York', week: '0' },
+  { label: 'United States – Central (Texas, Illinois…)', currency: 'USD', locale: 'en-US', timezone: 'America/Chicago', week: '0' },
+  { label: 'United States – Mountain (Colorado, Utah…)', currency: 'USD', locale: 'en-US', timezone: 'America/Denver', week: '0' },
+  { label: 'United States – Arizona (no daylight saving)', currency: 'USD', locale: 'en-US', timezone: 'America/Phoenix', week: '0' },
+  { label: 'United States – Pacific (California, Washington…)', currency: 'USD', locale: 'en-US', timezone: 'America/Los_Angeles', week: '0' },
+  { label: 'United States – Alaska', currency: 'USD', locale: 'en-US', timezone: 'America/Anchorage', week: '0' },
+  { label: 'United States – Hawaii', currency: 'USD', locale: 'en-US', timezone: 'Pacific/Honolulu', week: '0' },
+  { label: 'Philippines', currency: 'PHP', locale: 'en-PH', timezone: 'Asia/Manila', week: '1' },
+];
 
 export default function Settings() {
   const { can } = useApp();
@@ -39,6 +52,7 @@ function BusinessCard() {
   const { business } = useApp();
   const [f, setF] = useState({ name: business.name, currency: business.currency, locale: business.locale, timezone: business.timezone, week: String(business.week_starts_on), maxDisc: String(Number(business.cashier_max_discount_pct ?? 100)), header: business.receipt_header || '', footer: business.receipt_footer || '' });
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
+  const applyRegion = (i) => { const r = REGIONS[Number(i)]; if (r) setF((s) => ({ ...s, currency: r.currency, locale: r.locale, timezone: r.timezone, week: r.week })); };
   const zones = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [];
   const { busy, error, save } = useSaver(() => {
     if (!f.name.trim()) throw new Error('Please enter the business name.');
@@ -50,6 +64,7 @@ function BusinessCard() {
   });
   return (
     <section className="card"><h2>Business</h2>
+      <Field label="Quick setup by region" id="rg" hint="Pick your state's time zone and the dollar in one step. You can still change each box below."><select id="rg" className="input" defaultValue="" onChange={(e) => applyRegion(e.target.value)}><option value="" disabled>Choose a region…</option>{REGIONS.map((r, i) => <option key={r.label} value={i}>{r.label}</option>)}</select></Field>
       <div className="grid2" style={{ marginTop: '.6rem' }}>
         <Field label="Business name" id="bn"><input id="bn" className="input" value={f.name} onChange={set('name')} /></Field>
         <Field label="Currency" id="bc"><input id="bc" className="input" list="currencies" value={f.currency} onChange={set('currency')} /><datalist id="currencies">{CURRENCIES.map((c) => <option key={c} value={c} />)}</datalist></Field>
@@ -58,8 +73,8 @@ function BusinessCard() {
         <Field label="Week starts on" id="bw"><select id="bw" className="input" value={f.week} onChange={set('week')}><option value="1">Monday</option><option value="0">Sunday</option></select></Field>
       </div>
       <Field label="Largest discount a cashier may give (%)" id="md" hint="100 means no limit. Owners and managers are never limited."><input id="md" className="input" inputMode="decimal" value={f.maxDisc} onChange={set('maxDisc')} /></Field>
-      <Field label="Receipt header (optional)" id="rh" hint="Address, phone number…"><input id="rh" className="input" value={f.header} onChange={set('header')} /></Field>
-      <Field label="Receipt footer" id="rf"><input id="rf" className="input" value={f.footer} onChange={set('footer')} /></Field>
+      <Field label="Receipt header (optional)" id="rh" hint="Printed under the business name. Use several lines: address, phone, tax ID (TIN / EIN)…"><textarea id="rh" className="input" rows={3} value={f.header} onChange={set('header')} /></Field>
+      <Field label="Receipt footer" id="rf" hint="For example: Thank you! · Returns within 7 days with this receipt."><textarea id="rf" className="input" rows={2} value={f.footer} onChange={set('footer')} /></Field>
       {error && <div className="notice bad" role="alert">{error}</div>}
       <button className="btn" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save business'}</button>
     </section>

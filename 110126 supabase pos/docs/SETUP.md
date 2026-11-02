@@ -33,7 +33,22 @@ If the page says the app is "not connected to a database", the two variables are
 ## Running it on your own computer (optional)
 Install Node 20+, then: `npm install`, copy `.env.example` to `.env` and fill the two values, `npm run dev`.
 
+## Passwords and email (read this before adding staff)
+- Everyone can change their own password inside the app: **My account → Change my password**. This needs no email, so it always works.
+- **"Forgot password?" sends an email, and Supabase's built-in email sender only delivers to people on your Supabase organization team (2 messages per hour).** For staff outside your team, set up **custom SMTP** (Supabase → Authentication → Emails → SMTP Settings; free providers such as Resend or Brevo work). Until then, create staff accounts yourself (Authentication → Users → Add user, Auto Confirm User) with a strong temporary password, activate them under Team, and ask them to change it at once in My account.
+- Do not use passwords like `123450` as temporary passwords. Use a random phrase such as `blue-Tiger-42-lamp`.
+- In Supabase → Authentication → URL Configuration, set **Site URL** to your Netlify address and add it under **Redirect URLs** so reset links return to the app.
+
 ## Safety notes
 - Turn on **Confirm email** in Supabase (Authentication → Providers → Email) if the app is public. The owner address only becomes the owner once its email is confirmed, and only while no owner exists.
 - Cashiers can read cost prices (needed for the screens). Give cashier accounts only to people you trust with that.
 - Staff are deactivated, never deleted (their history stays).
+
+## Adding the Tax report to a shop that was set up earlier
+If you ran `setup.sql` before the Tax report existed, open `supabase/update-tax-report.sql`, paste it into
+Supabase > SQL Editor > New query and click Run. It is safe to run twice and changes no data.
+
+## Receipts
+Settings > Business: the header (address, phone, tax ID) and footer take several lines. In the receipt window,
+choose the paper (58 mm roll, 80 mm roll, A4/Letter); the choice is remembered on that device.
+Print sends only the receipt, never the whole screen.

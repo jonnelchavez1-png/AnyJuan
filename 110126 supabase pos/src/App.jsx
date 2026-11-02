@@ -4,12 +4,14 @@ import { repo } from './data/repo.js';
 import { formatMoney } from './lib/money.js';
 import { AppContext, CAN } from './ui/context.js';
 import { ErrorBox, Loading } from './ui/kit.jsx';
-import { Login, SetupNeeded, Waiting } from './features/Auth.jsx';
+import { Login, SetNewPassword, SetupNeeded, Waiting } from './features/Auth.jsx';
+import Account from './features/Account.jsx';
 import Sell from './features/Sell.jsx';
 import Sales from './features/Sales.jsx';
 import Products from './features/Products.jsx';
 import Expenses from './features/Expenses.jsx';
 import Dashboard from './features/Dashboard.jsx';
+import TaxReport from './features/TaxReport.jsx';
 import Settings from './features/Settings.jsx';
 import Team from './features/Team.jsx';
 
@@ -18,9 +20,11 @@ const ROUTES = [
   { path: 'sell', label: 'Sell', icon: '＋', can: 'sell', view: Sell },
   { path: 'sales', label: 'Sales', icon: '☰', can: 'viewSales', view: Sales },
   { path: 'products', label: 'Products', icon: '▣', can: null, view: Products },
+  { path: 'tax', label: 'Tax report', icon: '％', can: 'viewDashboard', view: TaxReport },
   { path: 'expenses', label: 'Expenses', icon: '−', can: 'viewExpenses', view: Expenses },
   { path: 'settings', label: 'Settings', icon: '⚙', can: 'editLists', view: Settings },
   { path: 'team', label: 'Team', icon: '☺', can: 'manageStaff', view: Team },
+  { path: 'account', label: 'My account', icon: '●', can: null, view: Account },
 ];
 
 function useHash() {
@@ -46,11 +50,16 @@ function Gate() {
   const [profile, setProfile] = useState(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState('');
+  const [recovery, setRecovery] = useState(false); // true after clicking a password-reset link
 
   useEffect(() => {
     let live = true;
     repo.getSession().then((s) => live && setSession(s)).catch((e) => { if (live) { setError(e.message); setSession(null); } });
-    const off = repo.onAuthChange((s) => live && setSession(s));
+    const off = repo.onAuthChange((s, event) => {
+      if (!live) return;
+      if (event === 'PASSWORD_RECOVERY') setRecovery(true);
+      setSession(s);
+    });
     return () => { live = false; off(); };
   }, []);
 
@@ -62,7 +71,24 @@ function Gate() {
   }, [userId]);
   useEffect(() => { loadProfile(); }, [loadProfile]);
 
+  // Pick up a role or "active" change the owner made on the Team page, without the person having to sign in again.
+  useEffect(() => {
+    if (!userId) return undefined;
+    const refresh = async () => {
+      if (document.visibilityState === 'hidden') return;
+      try {
+        const p = await repo.getProfile(userId);
+        setProfile((old) => (old && p && old.role === p.role && old.active === p.active && old.name === p.name ? old : p));
+      } catch { /* offline for a moment: keep what we have */ }
+    };
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('focus', refresh);
+    const timer = setInterval(refresh, 5 * 60 * 1000);
+    return () => { document.removeEventListener('visibilitychange', refresh); window.removeEventListener('focus', refresh); clearInterval(timer); };
+  }, [userId]);
+
   if (session === undefined) return <Loading label="Starting…" />;
+  if (session && recovery) return <SetNewPassword onDone={() => setRecovery(false)} onSignOut={() => { setRecovery(false); repo.signOut(); }} />;
   if (!session) return <><Login />{error && <div className="toasts"><div className="toast bad">{error}</div></div>}</>;
   if (error && !profile) return <div className="auth"><div className="card stack"><ErrorBox error={error} onRetry={loadProfile} /><button className="btn secondary" onClick={() => repo.signOut()}>Sign out</button></div></div>;
   if (!profile) return checking ? <Loading label="Checking your account…" /> : <Waiting email={session.user.email} onCheck={loadProfile} onSignOut={() => repo.signOut()} checking={checking} />;

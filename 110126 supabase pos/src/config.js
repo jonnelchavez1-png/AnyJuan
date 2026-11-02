@@ -3,8 +3,21 @@
 // has row level security. Never put a secret / service-role key in a VITE_ variable.
 const env = import.meta.env || {};
 
+/** Accept the address even if it was pasted with extra bits such as /rest/v1/ or a trailing slash: keep only https://xxxx.supabase.co */
+function cleanUrl(value) {
+  const text = String(value || '').trim();
+  try {
+    const u = new URL(text);
+    return u.protocol === 'https:' ? u.origin : text;
+  } catch {
+    return text;
+  }
+}
+
 export const config = {
-  supabaseUrl: (env.VITE_SUPABASE_URL || '').trim(),
+  // Self-service "New staff account" on the sign-in page. Off by default: the owner creates accounts in Supabase.
+  allowSignup: String(env.VITE_ALLOW_SIGNUP || '').trim().toLowerCase() === 'true',
+  supabaseUrl: cleanUrl(env.VITE_SUPABASE_URL),
   supabaseKey: (env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || '').trim(),
 };
 
