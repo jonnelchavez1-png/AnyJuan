@@ -50,6 +50,13 @@ Supabase > SQL Editor > New query and click Run (do this BEFORE uploading the ne
 "Returns installed". It is safe to run twice, adds new tables and replaces the report functions; your sales,
 products and expenses are not changed. It also contains the Tax report (the old `update-tax-report.sql` is replaced by it).
 
+## Adding the Cash drawer to a shop that was set up earlier
+First make sure `update-returns.sql` has been run (see above). Then open `supabase/update-drawer.sql`, paste it into
+Supabase > SQL Editor > New query and click Run (BEFORE uploading the new app files). It says "Cash drawer installed".
+It only adds two new tables and a few functions. Safe to run twice. Nothing about selling, returns, the dashboard or the
+tax report changes. If you upload the app first, the Cash drawer page just says it is not switched on yet; selling keeps working.
+How to use it: see `docs/DRAWER.md`.
+
 ## Receipts
 Settings > Business: the header (address, phone, tax ID) and footer take several lines. In the receipt window,
 choose the paper (58 mm roll, 80 mm roll, A4/Letter); the choice is remembered on that device.

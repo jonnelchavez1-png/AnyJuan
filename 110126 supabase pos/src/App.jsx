@@ -14,11 +14,13 @@ import Dashboard from './features/Dashboard.jsx';
 import TaxReport from './features/TaxReport.jsx';
 import Settings from './features/Settings.jsx';
 import Team from './features/Team.jsx';
+import Drawer from './features/Drawer.jsx';
 
 const ROUTES = [
   { path: 'dashboard', label: 'Dashboard', icon: '▤', can: 'viewDashboard', view: Dashboard },
   { path: 'sell', label: 'Sell', icon: '＋', can: 'sell', view: Sell },
   { path: 'sales', label: 'Sales', icon: '☰', can: 'viewSales', view: Sales },
+  { path: 'drawer', label: 'Cash drawer', icon: '▭', can: 'viewDrawer', view: Drawer },
   { path: 'products', label: 'Products', icon: '▣', can: null, view: Products },
   { path: 'tax', label: 'Tax report', icon: '％', can: 'viewDashboard', view: TaxReport },
   { path: 'expenses', label: 'Expenses', icon: '−', can: 'viewExpenses', view: Expenses },

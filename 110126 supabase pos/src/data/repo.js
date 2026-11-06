@@ -200,6 +200,29 @@ export const repo = {
     }));
   },
 
+  // ---------- cash drawer shifts (separate from selling: nothing here changes a sale) ----------
+  /** The open shift with its live figures, or null when none is open. */
+  async currentShift() {
+    return run(sb().rpc('current_shift'));
+  },
+  async getShift(id) {
+    return run(sb().rpc('get_shift', { p_shift_id: id }));
+  },
+  async listShifts(limit = 60) {
+    return run(sb().from('shifts').select('*').order('opened_at', { ascending: false }).limit(limit));
+  },
+  /** shift: {id, opening_cash, note}. Sending the same id twice is safe. */
+  async openShift(shift) {
+    return run(sb().rpc('open_shift', { p_shift: shift }));
+  },
+  /** movement: {id, kind: 'in' | 'out', amount, reason} */
+  async addCashMovement(movement) {
+    return run(sb().rpc('add_cash_movement', { p_move: movement }));
+  },
+  async closeShift(shiftId, counted, note) {
+    return run(sb().rpc('close_shift', { p_shift_id: shiftId, p_counted: counted, p_note: note || null }));
+  },
+
   async getTaxReport(range) {
     return run(sb().rpc('get_tax_report', { p_from: range.from, p_to: range.to }));
   },

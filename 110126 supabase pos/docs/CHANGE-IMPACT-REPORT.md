@@ -21,3 +21,14 @@ Rollback: the old version is untouched in `legacy/` and in git history (`main`).
   and the `sales_overview` view (adds `returned`, `refunded`; `balance` now = total - returned - (paid - refunded)).
 - Existing sales, products, payments and expenses are untouched. Upgrading: run `supabase/update-returns.sql` once.
 - App: one shared date range on Dashboard, Sales, Expenses and Tax report; Sales/Expenses read every row (paged); receipts print only the receipt.
+
+
+## Update: cash drawer shifts (additive only)
+- New tables `shifts`, `cash_movements`; new functions `current_shift`, `get_shift`, `open_shift`, `add_cash_movement`, `close_shift`
+  (plus private helpers `shift_figures`, `is_cash_method`). Upgrading: run `supabase/update-drawer.sql` once (after `update-returns.sql`).
+- **No existing table, view or function was changed.** Sales, payments, returns, the dashboard, the tax report and the Sell screen never read the drawer,
+  and the drawer never writes to them. Selling is not blocked when no shift is open.
+- App: one new page "Cash drawer" (owner, manager, cashier open/close and move cash; accountant can read). Existing pages are unchanged.
+- Proof it changes nothing: after the update all earlier checks give the same results (unit 80, browser 110, database 1,151 on a fresh and an upgraded database,
+  `verify.sql`), plus new ones for the drawer (unit +4, browser +18, database 35). A browser check also confirms Sales and Dashboard show identical figures before and after using the drawer.
+- Rollback: the app is tagged `before-drawer-shifts` in git. The two new tables can stay in the database without harm.
