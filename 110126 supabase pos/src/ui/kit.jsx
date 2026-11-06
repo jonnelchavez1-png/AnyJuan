@@ -131,3 +131,14 @@ export function downloadCsv(filename, header, rows) {
   a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+/** A password box with a Show / Hide button (so a typing mistake can be seen before signing in). */
+export function PasswordInput({ id, value, onChange, autoComplete, required }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div className="pwbox">
+      <input id={id} className="input" type={shown ? 'text' : 'password'} value={value} onChange={onChange} autoComplete={autoComplete} required={required} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+      <button type="button" className="pwtoggle" aria-pressed={shown} aria-label={shown ? 'Hide password' : 'Show password'} onClick={() => setShown((v) => !v)}>{shown ? 'Hide' : 'Show'}</button>
+    </div>
+  );
+}

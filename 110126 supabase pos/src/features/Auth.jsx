@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { repo } from '../data/repo.js';
-import { Field } from '../ui/kit.jsx';
+import { Field, PasswordInput } from '../ui/kit.jsx';
 import { checkPassword } from '../lib/password.js';
 import { config } from '../config.js';
 
@@ -58,7 +58,7 @@ export function Login() {
         {mode === 'up' && <Field label="Your name" id="name"><input id="name" className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required /></Field>}
         <Field label="Email" id="email"><input id="email" className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required /></Field>
         {mode !== 'reset' && <Field label="Password" id="password" hint={mode === 'up' ? 'At least 8 characters.' : undefined}>
-          <input id="password" className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'in' ? 'current-password' : 'new-password'} required />
+          <PasswordInput id="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'in' ? 'current-password' : 'new-password'} required />
         </Field>}
         <button className="btn block" disabled={busy}>{busy ? 'Please wait…' : mode === 'in' ? 'Sign in' : mode === 'up' ? 'Create account' : 'Send reset link'}</button>
         <div className="row between small">
@@ -101,8 +101,8 @@ export function SetNewPassword({ onDone, onSignOut }) {
       <h1>Choose a new password</h1>
       <p className="muted">Pick a password only you know. At least 8 characters, with letters.</p>
       {error && <div className="notice bad" role="alert">{error}</div>}
-      <Field label="New password" id="np1"><input id="np1" className="input" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} required /></Field>
-      <Field label="Type it again" id="np2"><input id="np2" className="input" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} required /></Field>
+      <Field label="New password" id="np1"><PasswordInput id="np1" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} required /></Field>
+      <Field label="Type it again" id="np2"><PasswordInput id="np2" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} required /></Field>
       <button className="btn block" disabled={busy}>{busy ? 'Saving…' : 'Save new password'}</button>
       <button type="button" className="btn ghost small" onClick={onSignOut}>Cancel and sign out</button>
     </form></div>

@@ -148,11 +148,11 @@ function PrinterCard() {
   const { business, money } = useApp();
   const [paper, setPaper] = useState(() => (PAPERS[remember('pos.paper')] ? remember('pos.paper') : '80'));
   const test = () => {
-    const sample = [['Sample item with a rather long name', 2, 125.5], ['Short', 1, 10]];
+    const sample = [['Sample item with a rather long name', 2, 12550], ['Short', 1, 1000]]; // prices in cents, like everywhere else in the app
     const total = sample.reduce((n, [, q, p]) => n + q * p, 0);
     const html = `<div class="receipt"><h3>${esc(business.name)}</h3><div class="center">TEST RECEIPT</div><div class="center">${esc(new Date().toLocaleString(business.locale, { timeZone: business.timezone }))}</div><hr />`
       + sample.map(([n, q, p]) => `<div><div>${esc(n)}</div><div class="line"><span>${q} × ${esc(money(p))}</span><span>${esc(money(q * p))}</span></div></div>`).join('')
-      + `<hr /><div class="line"><strong>TOTAL</strong><strong>${esc(money(total))}</strong></div><hr /><div class="center">If this is centred and nothing is cut off,\nyour printer is set up correctly.</div></div>`;
+      + `<hr /><div class="line"><strong>TOTAL</strong><strong>${esc(money(total))}</strong></div><hr /><div class="center">Centred and nothing cut off?\nThen your printer is set up.</div></div>`;
     printHtml(html, { paper, title: 'Test receipt' });
   };
   return (

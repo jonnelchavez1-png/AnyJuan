@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { repo } from '../data/repo.js';
 import { checkPassword } from '../lib/password.js';
 import { useApp } from '../ui/context.js';
-import { Badge, Field, PageHead } from '../ui/kit.jsx';
+import { Badge, Field, PageHead, PasswordInput } from '../ui/kit.jsx';
 
 export default function Account() {
   const { profile, user, toast } = useApp();
@@ -29,8 +29,8 @@ export default function Account() {
         <form className="card" onSubmit={save}><h2>Change my password</h2>
           <p className="muted small">Use at least 8 characters with letters. Do not reuse a password from another website.</p>
           {error && <div className="notice bad" role="alert">{error}</div>}
-          <Field label="New password" id="acc1"><input id="acc1" className="input" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
-          <Field label="Type it again" id="acc2"><input id="acc2" className="input" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></Field>
+          <Field label="New password" id="acc1"><PasswordInput id="acc1" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
+          <Field label="Type it again" id="acc2"><PasswordInput id="acc2" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></Field>
           <button className="btn" disabled={busy || !pw}>{busy ? 'Saving…' : 'Save new password'}</button>
         </form>
       </div>

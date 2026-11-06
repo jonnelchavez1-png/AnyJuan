@@ -18,7 +18,7 @@ export function paperCss(paper, heightMm) {
   const p = PAPERS[paper] || PAPERS['80'];
   if (!p.roll) return '@page { margin: 15mm; } html, body { width: auto; } body { width: 100mm; margin: 0 auto; font-size: 13px; }';
   const h = heightMm ? `${heightMm}mm` : '200mm';
-  return `@page { size: ${p.page}mm ${h}; margin: 0; } html { width: ${p.page}mm; } body { width: ${p.body}mm; margin: 0 auto; padding: 3mm 0 8mm; font-size: ${p.font}px; }`;
+  return `@page { size: ${p.page}mm ${h}; margin: 0; } html { width: auto; } body { width: ${p.body}mm; margin: 0 auto; padding: 3mm 0 8mm; font-size: ${p.font}px; }`;
 }
 
 /** Height (mm) a roll receipt needs, from its on-screen height in pixels. A little spare so the last line is never cut. */
