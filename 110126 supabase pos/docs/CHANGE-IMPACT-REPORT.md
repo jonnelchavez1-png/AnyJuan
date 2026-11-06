@@ -40,3 +40,10 @@ Rollback: the old version is untouched in `legacy/` and in git history (`main`).
 - Reports and the Dashboard show the last saved figures when offline and say so. Voids, returns, expenses, new customers and the drawer need the internet.
 - Proof: unit 96, browser 126 (existing) + 34 (offline, real Chromium with service worker and IndexedDB), database 1,151 + 35 + 39 on a fresh and on upgraded databases, `verify.sql` passes; update script run twice.
 - Rollback: the app is tagged `before-offline` in git. The new tables and functions can stay in the database without harm.
+
+## Update: receipt printing and screen-size checks
+- `src/lib/print.js`: roll receipts now use an exact page (paper width x measured height) with the receipt centred. The old rule `size: 80mm auto` is not valid CSS, so browsers ignored it and printed a small, left-aligned receipt on a full sheet.
+- Settings: new "Receipt printer (this device)" card with paper choice and "Print test receipt". Nothing in the database changed (no SQL to run).
+- Proof: `tests-browser/print.cjs` (20 checks, real PDF output), `tests-browser/responsive.cjs` (28 checks, 7 screen sizes x 11 screens + receipt), earlier suites unchanged (unit 96, browser 127, offline 34).
+- Not tested: a physical thermal printer (none available here). See `docs/PRINTING.md`.
+- Rollback: tag `before-printing` (git).

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { repo } from '../data/repo.js';
 import { useApp } from '../ui/context.js';
 import { Field, PageHead } from '../ui/kit.jsx';
+import { PAPERS, printHtml, remember } from '../lib/print.js';
 
 // Currencies with 2 decimals (the app stores amounts to the cent). Others such as JPY or VND are not offered.
 const CURRENCIES = ['PHP', 'USD', 'EUR', 'GBP', 'SGD', 'AUD', 'CAD', 'HKD', 'THB', 'MYR', 'INR', 'AED', 'SAR'];
@@ -24,6 +25,7 @@ export default function Settings() {
     <>
       <PageHead title="Settings" />
       <div className="stack">
+        <PrinterCard />
         {can('editBusiness') && <BusinessCard />}
         {can('editBusiness') && <TaxCard />}
         <div className="panels">
@@ -140,3 +142,28 @@ function ListRow({ row, table, run, busy }) {
     </div>
   );
 }
+
+/** Per-device printing choice plus a test receipt, so a new printer can be checked without making a sale. */
+function PrinterCard() {
+  const { business, money } = useApp();
+  const [paper, setPaper] = useState(() => (PAPERS[remember('pos.paper')] ? remember('pos.paper') : '80'));
+  const test = () => {
+    const sample = [['Sample item with a rather long name', 2, 125.5], ['Short', 1, 10]];
+    const total = sample.reduce((n, [, q, p]) => n + q * p, 0);
+    const html = `<div class="receipt"><h3>${esc(business.name)}</h3><div class="center">TEST RECEIPT</div><div class="center">${esc(new Date().toLocaleString(business.locale, { timeZone: business.timezone }))}</div><hr />`
+      + sample.map(([n, q, p]) => `<div><div>${esc(n)}</div><div class="line"><span>${q} × ${esc(money(p))}</span><span>${esc(money(q * p))}</span></div></div>`).join('')
+      + `<hr /><div class="line"><strong>TOTAL</strong><strong>${esc(money(total))}</strong></div><hr /><div class="center">If this is centred and nothing is cut off,\nyour printer is set up correctly.</div></div>`;
+    printHtml(html, { paper, title: 'Test receipt' });
+  };
+  return (
+    <section className="card"><h2>Receipt printer (this device)</h2>
+      <p className="muted small">Each device remembers its own paper size. Choose the paper that is in your printer, then print a test receipt.</p>
+      <div className="row" style={{ gap: '.6rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <Field label="Paper" id="pp"><select id="pp" className="input" value={paper} onChange={(e) => { setPaper(e.target.value); remember('pos.paper', e.target.value); }}>{Object.entries(PAPERS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></Field>
+        <button className="btn secondary" onClick={test}>Print test receipt</button>
+      </div>
+      <p className="muted small" style={{ marginBottom: 0 }}>In the print window: pick your receipt printer, set Margins to <strong>None</strong>, and turn off &ldquo;Headers and footers&rdquo;. See docs/PRINTING.md.</p>
+    </section>
+  );
+}
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
