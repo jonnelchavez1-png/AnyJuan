@@ -34,6 +34,22 @@ async function run(promise) {
 
 const sb = () => getClient();
 
+/**
+ * Read EVERY row of a query, one page at a time (the server hands out at most 1000 rows per request).
+ * Totals on screen are added up from all of them, never from a cut-off list. `build()` must return a fresh,
+ * ordered query each time. Stops at `max` rows and marks the array `.truncated` so the screen can say so.
+ */
+async function fetchAll(build, { page = 1000, max = 20000 } = {}) {
+  const out = [];
+  for (let from = 0; from < max; from += page) {
+    const rows = (await run(build().range(from, from + page - 1))) || [];
+    out.push(...rows);
+    if (rows.length < page) return out;
+  }
+  out.truncated = true;
+  return out;
+}
+
 export const repo = {
   // ---------- sign in ----------
   async getSession() {
@@ -125,11 +141,30 @@ export const repo = {
       p_payment_id: paymentId, p_sale_id: saleId, p_method_id: methodId, p_amount: amount, p_note: note || null,
     }));
   },
-  async listSales({ fromInstant, toInstant, limit = 300 } = {}) {
-    let q = sb().from('sales_overview').select('*').order('occurred_at', { ascending: false }).limit(limit);
-    if (fromInstant) q = q.gte('occurred_at', fromInstant);
-    if (toInstant) q = q.lt('occurred_at', toInstant);
-    return run(q);
+  async listSales({ fromInstant, toInstant } = {}) {
+    return fetchAll(() => {
+      let q = sb().from('sales_overview').select('*').order('occurred_at', { ascending: false }).order('id');
+      if (fromInstant) q = q.gte('occurred_at', fromInstant);
+      if (toInstant) q = q.lt('occurred_at', toInstant);
+      return q;
+    });
+  },
+  /** Money back to a customer: some or all items of one sale. return: {id, sale_id, reason, refund_method_id?}; items: [{sale_item_id, quantity, restock}] */
+  async createReturn(ret, items) {
+    return run(sb().rpc('create_return', { p_return: ret, p_items: items }));
+  },
+  async listReturns({ fromInstant, toInstant } = {}) {
+    return fetchAll(() => {
+      let q = sb().from('returns').select('*').order('occurred_at', { ascending: false }).order('id');
+      if (fromInstant) q = q.gte('occurred_at', fromInstant);
+      if (toInstant) q = q.lt('occurred_at', toInstant);
+      return q;
+    });
+  },
+  /** Every return of one sale, each with its lines. */
+  async getSaleReturns(saleId) {
+    const rets = await run(sb().from('returns').select('*').eq('sale_id', saleId).order('occurred_at'));
+    return Promise.all((rets || []).map(async (r) => ({ ...r, items: await run(sb().from('return_items').select('*').eq('return_id', r.id)) })));
   },
   async getSaleDetail(saleId) {
     const [items, payments] = await Promise.all([
@@ -141,10 +176,12 @@ export const repo = {
 
   // ---------- expenses ----------
   async listExpenses({ from, to } = {}) {
-    let q = sb().from('expenses').select('*').order('expense_date', { ascending: false }).order('created_at', { ascending: false }).limit(500);
-    if (from) q = q.gte('expense_date', from);
-    if (to) q = q.lte('expense_date', to);
-    return run(q);
+    return fetchAll(() => {
+      let q = sb().from('expenses').select('*').order('expense_date', { ascending: false }).order('created_at', { ascending: false }).order('id');
+      if (from) q = q.gte('expense_date', from);
+      if (to) q = q.lte('expense_date', to);
+      return q;
+    });
   },
   async saveExpense(row, userId) {
     const { id, ...fields } = row;

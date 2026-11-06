@@ -101,6 +101,7 @@ function Shell({ user, profile }) {
   const [loadError, setLoadError] = useState('');
   const [toasts, setToasts] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [period, setPeriod] = useState({ preset: 'month', custom: null }); // shared by Dashboard, Sales, Expenses, Tax report
   const hash = useHash();
 
   const loadBase = useCallback(async () => {
@@ -138,7 +139,7 @@ function Shell({ user, profile }) {
     [business?.currency, business?.locale],
   );
 
-  const ctx = useMemo(() => base && ({ ...base, user, profile, role, can, toast, money, reload: loadBase }), [base, user, profile, role, can, toast, money, loadBase]);
+  const ctx = useMemo(() => base && ({ ...base, user, profile, role, can, toast, money, period, setPeriod, reload: loadBase }), [base, user, profile, role, can, toast, money, period, loadBase]);
 
   if (loadError) return <div className="auth"><div className="card stack"><ErrorBox error={loadError} onRetry={loadBase} /><button className="btn secondary" onClick={() => repo.signOut()}>Sign out</button></div></div>;
   if (!ctx) return <Loading label="Loading your business…" />;

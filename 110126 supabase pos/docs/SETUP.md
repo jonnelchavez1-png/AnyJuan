@@ -44,9 +44,11 @@ Install Node 20+, then: `npm install`, copy `.env.example` to `.env` and fill th
 - Cashiers can read cost prices (needed for the screens). Give cashier accounts only to people you trust with that.
 - Staff are deactivated, never deleted (their history stays).
 
-## Adding the Tax report to a shop that was set up earlier
-If you ran `setup.sql` before the Tax report existed, open `supabase/update-tax-report.sql`, paste it into
-Supabase > SQL Editor > New query and click Run. It is safe to run twice and changes no data.
+## Adding Returns and the Tax report to a shop that was set up earlier
+If you ran `setup.sql` before Returns existed, open `supabase/update-returns.sql`, paste it into
+Supabase > SQL Editor > New query and click Run (do this BEFORE uploading the new app files). It says
+"Returns installed". It is safe to run twice, adds new tables and replaces the report functions; your sales,
+products and expenses are not changed. It also contains the Tax report (the old `update-tax-report.sql` is replaced by it).
 
 ## Receipts
 Settings > Business: the header (address, phone, tax ID) and footer take several lines. In the receipt window,

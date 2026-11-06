@@ -8,6 +8,7 @@ export const CAN = {
   sell: ['owner', 'manager', 'cashier'],
   viewSales: ['owner', 'manager', 'cashier', 'accountant'],
   voidSale: ['owner', 'manager'],
+  returnItems: ['owner', 'manager'],
   takePayment: ['owner', 'manager', 'cashier'],
   editProducts: ['owner', 'manager'],
   adjustStock: ['owner', 'manager'],

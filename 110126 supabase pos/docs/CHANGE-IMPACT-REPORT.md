@@ -13,3 +13,11 @@
 | Password handling | Client-side hashing (removed in the last commit) | Supabase Auth only | None. |
 
 Rollback: the old version is untouched in `legacy/` and in git history (`main`). v3 lives on the `rebuild/v3` branch.
+
+
+## Update: returns and refunds, shared dates, tax report, receipts
+- New tables `returns`, `return_items`; new functions `create_return`, `plan_return`, `dash_lines`; replaced `period_totals`,
+  `get_dashboard`, `get_tax_report`, `void_sale` (refuses a sale that has returns), `record_payment` (uses the balance after returns)
+  and the `sales_overview` view (adds `returned`, `refunded`; `balance` now = total - returned - (paid - refunded)).
+- Existing sales, products, payments and expenses are untouched. Upgrading: run `supabase/update-returns.sql` once.
+- App: one shared date range on Dashboard, Sales, Expenses and Tax report; Sales/Expenses read every row (paged); receipts print only the receipt.

@@ -171,6 +171,9 @@ tr.dim td { color: var(--ink-soft); }
 .receipt .line { display: flex; justify-content: space-between; gap: .5rem; }
 .receipt hr { border: 0; border-top: 1px dashed #000; margin: .5rem 0; }
 .receipt .center { text-align: center; white-space: pre-line; }
+.qty-input { width: 5rem; text-align: right; padding: .35rem .4rem; }
+@media (max-width: 520px) { .dialog th, .dialog td { padding: .4rem .25rem; font-size: .85rem; } .qty-input { width: 4rem; } }
+.period-note { margin: 0 0 .9rem; font-size: .95rem; }
 .paper-pick { display: inline-flex; align-items: center; gap: .4rem; }
 .paper-pick select { width: auto; padding: .35rem .5rem; }
 

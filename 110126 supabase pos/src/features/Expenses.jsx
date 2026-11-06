@@ -1,19 +1,19 @@
 import { useMemo, useState } from 'react';
 import { repo } from '../data/repo.js';
-import { PRESET_LABELS, rangeFor, todayIn } from '../lib/dates.js';
+import { todayIn } from '../lib/dates.js';
 import { fromCents, parseAmount, toCents } from '../lib/money.js';
 import { useApp } from '../ui/context.js';
+import { PeriodBar, usePeriod } from '../ui/period.jsx';
 import { Badge, ConfirmDialog, Dialog, ErrorBox, Field, Loading, PageHead, downloadCsv, useLoad } from '../ui/kit.jsx';
 
-const RANGES = ['week', 'month', 'quarter', 'year'];
+const SHOW_MAX = 500; // rows drawn on screen; the total always counts every expense
 
 export default function Expenses() {
   const { business, expenseCategories, can, money, user, toast } = useApp();
-  const [preset, setPreset] = useState('month');
   const [edit, setEdit] = useState(null);
   const [voiding, setVoiding] = useState(null);
-  const range = useMemo(() => rangeFor(preset, { today: todayIn(business.timezone), weekStartsOn: business.week_starts_on }), [preset, business]);
-  const { data, error, loading, reload } = useLoad(() => repo.listExpenses(range), [range.from, range.to]);
+  const { range, customOk } = usePeriod();
+  const { data, error, loading, reload } = useLoad(() => (customOk ? repo.listExpenses(range) : Promise.resolve([])), [range.from, range.to, customOk]);
   const catName = (id) => expenseCategories.find((c) => c.id === id)?.name || 'No category';
   const live = (data || []).filter((e) => !e.voided_at);
   const total = live.reduce((n, e) => n + toCents(e.amount), 0);
@@ -30,19 +30,19 @@ export default function Expenses() {
         <button className="btn secondary small" disabled={!live.length} onClick={() => downloadCsv(`expenses-${range.from}-to-${range.to}.csv`, ['Date', 'Category', 'Payee', 'Amount', 'Note'], live.map((e) => [e.expense_date, catName(e.category_id), e.payee, e.amount, e.note]))}>Download CSV</button>
         {canEdit && <button className="btn" onClick={() => setEdit({})}>＋ Add expense</button>}
       </PageHead>
-      <div className="range-bar" role="group" aria-label="Period">{RANGES.map((r) => <button key={r} className="seg" aria-pressed={preset === r} onClick={() => setPreset(r)}>{PRESET_LABELS[r]}</button>)}</div>
+      <PeriodBar />
       <ErrorBox error={error} onRetry={reload} />
       {loading && !data ? <Loading /> : (
         <div className="panels">
           <div className="card">
-            <h2>Total spent</h2><div className="num" style={{ fontSize: '1.8rem', fontWeight: 800 }}>{money(total)}</div>
+            <h2>Total spent <span className="muted small">(same as the Expenses figure on the Dashboard)</span></h2><div className="num" style={{ fontSize: '1.8rem', fontWeight: 800 }}>{money(total)}</div>
             {byCat.map(([name, amt]) => <div className="row between small" key={name}><span>{name}</span><span className="num">{money(amt)}</span></div>)}
             {!byCat.length && <p className="muted">Nothing recorded for this period.</p>}
           </div>
           <div className="card table-wrap">
             {!data?.length ? <div className="empty">No expenses in this period.</div> : <table>
               <thead><tr><th>Date</th><th>What</th><th className="right">Amount</th><th></th></tr></thead>
-              <tbody>{data.map((e) => (
+              <tbody>{data.slice(0, SHOW_MAX).map((e) => (
                 <tr key={e.id} className={e.voided_at ? 'dim' : ''}>
                   <td>{e.expense_date}</td><td>{catName(e.category_id)}<div className="small muted">{[e.payee, e.note].filter(Boolean).join(' · ')}</div></td>
                   <td className="right num">{e.voided_at ? <s>{money(toCents(e.amount))}</s> : money(toCents(e.amount))}</td>
@@ -51,7 +51,8 @@ export default function Expenses() {
           </div>
         </div>
       )}
-      {edit && <ExpenseDialog expense={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload(); }} />}
+      {data?.length > SHOW_MAX && <p className="notice">Showing the newest {SHOW_MAX} of {data.length} expenses. The total above counts all {data.length}.</p>}
+      {edit && <ExpenseDialog expense={edit} onClose={() => setEdit(null)} onSaved={(date) => { setEdit(null); reload(); if (date && (date < range.from || date > range.to)) toast(`Saved. It is dated ${date}, which is outside the dates shown, so change the dates to see it.`); }} />}
       {voiding && <ConfirmDialog title="Void this expense?" danger confirmLabel="Void expense" message="It will no longer count in your totals. It stays in the list marked as voided."
         onConfirm={async () => { await repo.voidExpense(voiding.id, user.id); toast('Expense voided', 'good'); reload(); }} onClose={() => setVoiding(null)} />}
     </>
@@ -72,7 +73,7 @@ function ExpenseDialog({ expense, onClose, onSaved }) {
     setBusy(true); setError('');
     try {
       await repo.saveExpense({ id: expense.id, amount: fromCents(amt), expense_date: f.date, category_id: f.category_id || null, payee: f.payee.trim() || null, note: f.note.trim() || null }, user.id);
-      toast(isNew ? 'Expense added' : 'Expense saved', 'good'); onSaved();
+      toast(isNew ? 'Expense added' : 'Expense saved', 'good'); onSaved(f.date);
     } catch (e) { setError(e.message); setBusy(false); }
   };
   return (

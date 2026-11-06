@@ -1,27 +1,34 @@
 import { useMemo, useRef, useState } from 'react';
 import { repo } from '../data/repo.js';
-import { PRESET_LABELS, addDays, rangeFor, startOfDayInstant, todayIn } from '../lib/dates.js';
+import { addDays, startOfDayInstant } from '../lib/dates.js';
 import { fromCents, parseAmount, toCents } from '../lib/money.js';
 import { newId } from '../lib/ids.js';
 import { useApp } from '../ui/context.js';
 import { Badge, ConfirmDialog, Dialog, ErrorBox, Field, Loading, PageHead, downloadCsv, useLoad } from '../ui/kit.jsx';
 import { ReceiptDialog } from '../ui/Receipt.jsx';
+import { ReturnSlipDialog } from '../ui/ReturnSlip.jsx';
+import { ReturnDialog } from './ReturnDialog.jsx';
+import { PeriodBar, usePeriod } from '../ui/period.jsx';
 
-const RANGES = ['today', 'week', 'month', 'year', 'custom'];
+const SHOW_MAX = 500; // rows drawn on screen; totals and the CSV always use every sale
 
 export default function Sales() {
   const { business, customers, can, money } = useApp();
-  const [preset, setPreset] = useState('week');
-  const [custom, setCustom] = useState({ from: todayIn(business.timezone), to: todayIn(business.timezone) });
   const [filter, setFilter] = useState('all'); // all | unpaid | voided
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(null);
   const [openMode, setOpenMode] = useState('');
-  const range = useMemo(() => rangeFor(preset, { today: todayIn(business.timezone), weekStartsOn: business.week_starts_on, custom }), [preset, business, custom]);
-  const { data, error, loading, reload } = useLoad(() => repo.listSales({
+  const { range, customOk } = usePeriod();
+  const { data, error, loading, reload } = useLoad(() => (!customOk ? Promise.resolve([]) : repo.listSales({
     fromInstant: startOfDayInstant(range.from, business.timezone).toISOString(),
     toInstant: startOfDayInstant(addDays(range.to, 1), business.timezone).toISOString(),
-  }), [range.from, range.to]);
+  })), [range.from, range.to, customOk]);
+  const rets = useLoad(() => (!customOk ? Promise.resolve([]) : repo.listReturns({
+    fromInstant: startOfDayInstant(range.from, business.timezone).toISOString(),
+    toInstant: startOfDayInstant(addDays(range.to, 1), business.timezone).toISOString(),
+  })), [range.from, range.to, customOk]);
+  const returnRows = rets.data || [];
+  const returnsTotal = returnRows.reduce((n, r) => n + toCents(r.total), 0);
 
   const custName = (id) => customers.find((c) => c.id === id)?.name || '';
   const rows = useMemo(() => (data || []).filter((s) => {
@@ -32,59 +39,65 @@ export default function Sales() {
   }), [data, filter, q, customers]);
 
   const live = rows.filter((s) => s.status === 'completed');
+  const reloadAll = () => { reload(); rets.reload(); };
   const totalBilled = live.reduce((n, s) => n + toCents(s.total), 0);
   const totalOwed = live.reduce((n, s) => n + toCents(s.balance), 0);
   const fmtDate = (iso) => new Date(iso).toLocaleString(business.locale, { timeZone: business.timezone, dateStyle: 'medium', timeStyle: 'short' });
 
   const exportCsv = () => downloadCsv(`sales-${range.from}-to-${range.to}.csv`,
     ['Invoice', 'Date', 'Customer', 'Status', 'Subtotal', 'Discount', 'Tax', 'Total', 'Net sales', 'Paid', 'Balance'],
-    rows.map((s) => [s.invoice_number, s.occurred_at, custName(s.customer_id), s.status, s.subtotal, s.discount_amount, s.tax_amount, s.total, s.net_sales, s.paid, s.balance]));
+    [...rows.map((s) => [s.invoice_number, s.occurred_at, custName(s.customer_id), s.status, s.subtotal, s.discount_amount, s.tax_amount, s.total, s.net_sales, s.paid, s.balance]),
+      ...returnRows.map((r) => [r.return_number, r.occurred_at, `Return of ${r.invoice_number}`, 'return', -r.subtotal, -r.discount_amount, -r.tax_amount, -r.total, -r.net_amount, -r.refund_amount, ''])]);
 
   return (
     <>
-      <PageHead title="Sales"><button className="btn secondary small" onClick={exportCsv} disabled={!rows.length}>Download CSV</button></PageHead>
-      <div className="range-bar" role="group" aria-label="Period">
-        {RANGES.map((r) => <button key={r} className="seg" aria-pressed={preset === r} onClick={() => setPreset(r)}>{PRESET_LABELS[r]}</button>)}
-      </div>
-      {preset === 'custom' && (
-        <div className="row" style={{ marginBottom: '.75rem' }}>
-          <label>From <input className="input" type="date" value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} /></label>
-          <label>To <input className="input" type="date" value={custom.to} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} /></label>
-        </div>
-      )}
+      <PageHead title="Sales"><button className="btn secondary small" onClick={exportCsv} disabled={!rows.length && !returnRows.length}>Download CSV</button></PageHead>
+      <PeriodBar />
       <div className="row" style={{ marginBottom: '.75rem' }}>
         <input className="input" style={{ maxWidth: 280 }} type="search" aria-label="Search sales" placeholder="Invoice or customer" value={q} onChange={(e) => setQ(e.target.value)} />
         <select className="input" style={{ maxWidth: 200 }} aria-label="Show" value={filter} onChange={(e) => setFilter(e.target.value)}>
           <option value="all">All sales</option><option value="unpaid">Not fully paid</option><option value="voided">Voided</option>
         </select>
-        <span className="muted small num">{live.length} sales · billed {money(totalBilled)} · still owed {money(totalOwed)}</span>
+        <span className="muted small num" data-testid="sales-summary">{live.length} sales · billed {money(totalBilled)}{returnRows.length ? ` · returned ${money(returnsTotal)} · net ${money(totalBilled - returnsTotal)}` : ''} · still owed {money(totalOwed)}</span>
       </div>
       <ErrorBox error={error} onRetry={reload} />
       {loading && !data ? <Loading /> : !rows.length ? <div className="card empty">No sales found for this period.</div> : (
         <div className="card table-wrap"><table>
           <thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th className="right">Total</th><th className="right">Balance</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody>{rows.map((s) => (
+          <tbody>{rows.slice(0, SHOW_MAX).map((s) => (
             <tr key={s.id} className={s.status === 'voided' ? 'dim' : ''}>
               <td><button className="btn ghost small" onClick={() => { setOpenMode(''); setOpen(s); }}>{s.invoice_number}</button></td>
               <td className="nowrap">{fmtDate(s.occurred_at)}</td><td>{custName(s.customer_id) || 'Walk-in'}</td>
               <td className="right num">{money(toCents(s.total))}</td>
               <td className="right num">{s.status === 'completed' && toCents(s.balance) > 0 ? money(toCents(s.balance)) : '–'}</td>
-              <td>{s.status === 'voided' ? <Badge tone="bad">Voided</Badge> : toCents(s.balance) > 0 ? <Badge tone="warn">Unpaid</Badge> : <Badge tone="good">Paid</Badge>}</td>
+              <td>{s.status === 'voided' ? <Badge tone="bad">Voided</Badge> : toCents(s.balance) > 0 ? <Badge tone="warn">Unpaid</Badge> : <Badge tone="good">Paid</Badge>}{toCents(s.returned) > 0 && <> <Badge tone="warn">{toCents(s.returned) >= toCents(s.total) ? 'Returned' : 'Part returned'}</Badge></>}</td>
               <td className="nowrap">
                 <button className="btn secondary small" onClick={() => { setOpenMode(''); setOpen(s); }}>Open</button>{' '}
-                {s.status === 'completed' && can('voidSale') && <button className="btn danger small" aria-label={`Void ${s.invoice_number}`} onClick={() => { setOpenMode('void'); setOpen(s); }}>Void</button>}
+                {s.status === 'completed' && can('voidSale') && toCents(s.returned) === 0 && <button className="btn danger small" aria-label={`Void ${s.invoice_number}`} onClick={() => { setOpenMode('void'); setOpen(s); }}>Void</button>}
+                {s.status === 'completed' && can('returnItems') && toCents(s.returned) < toCents(s.total) && <> <button className="btn secondary small" aria-label={`Return items from ${s.invoice_number}`} onClick={() => { setOpenMode('return'); setOpen(s); }}>Return</button></>}
               </td>
             </tr>))}</tbody>
         </table></div>
       )}
-      {open && <SaleDetail key={open.id + openMode} startMode={openMode} sale={open} onClose={() => setOpen(null)} onChanged={() => { reload(); setOpen(null); }} can={can} />}
+      {returnRows.length > 0 && (
+        <section className="card table-wrap" style={{ marginTop: '1rem' }} aria-label="Returns in this period">
+          <h2>Returns in this period <span className="muted small">({returnRows.length} · {money(returnsTotal)} · counted on the day the goods came back)</span></h2>
+          <table><thead><tr><th>Return</th><th>Date</th><th>Sale</th><th>Reason</th><th className="right">Value returned</th><th className="right">Money given back</th></tr></thead>
+            <tbody>{returnRows.slice(0, SHOW_MAX).map((r) => (
+              <tr key={r.id}><td>{r.return_number}</td><td className="nowrap">{fmtDate(r.occurred_at)}</td><td>{r.invoice_number}</td><td>{r.reason}</td>
+                <td className="right num">{money(toCents(r.total))}</td><td className="right num">{toCents(r.refund_amount) > 0 ? money(toCents(r.refund_amount)) : '–'}</td></tr>))}</tbody></table>
+        </section>)}
+      {rows.length > SHOW_MAX && <p className="notice">Showing the newest {SHOW_MAX} of {rows.length} sales. The totals above count all {rows.length}. Download the CSV to get every sale.</p>}
+      {data?.truncated && <p className="notice bad">This period has more than 20,000 sales, so some are left out. Choose a shorter period.</p>}
+      {open && <SaleDetail key={open.id + openMode} startMode={openMode} sale={open} onClose={() => setOpen(null)} onChanged={() => { reloadAll(); setOpen(null); }} can={can} />}
     </>
   );
 }
 
 function SaleDetail({ sale, onClose, onChanged, can, startMode = '' }) {
+  const [slip, setSlip] = useState(null);
   const { methods, customers, money, toast, reload: reloadBase } = useApp();
-  const { data, error, loading } = useLoad(() => repo.getSaleDetail(sale.id), [sale.id]);
+  const { data, error, loading } = useLoad(async () => ({ ...(await repo.getSaleDetail(sale.id)), returns: await repo.getSaleReturns(sale.id) }), [sale.id]);
   const [mode, setMode] = useState(startMode); // '' | receipt | pay | void
   const balance = toCents(sale.balance);
   const methodName = (id) => methods.find((m) => m.id === id)?.name || 'Payment';
@@ -102,13 +115,16 @@ function SaleDetail({ sale, onClose, onChanged, can, startMode = '' }) {
   if (mode === 'void') return <ConfirmDialog title={`Void ${sale.invoice_number}?`} danger askReason confirmLabel="Void sale"
     message="This cancels the whole sale and puts the items back in stock. It cannot be undone, but it stays in the history."
     onConfirm={async (reason) => { await repo.voidSale(sale.id, reason); toast('Sale voided', 'good'); reloadBase(); onChanged(); }} onClose={() => (startMode ? onClose() : setMode(''))} />;
+  if (slip) return <ReturnSlipDialog slip={slip} onClose={() => { setSlip(null); reloadBase(); onChanged(); }} />;
+  if (mode === 'return') return data ? <ReturnDialog sale={sale} items={data.items} onClose={() => (startMode ? onClose() : setMode(''))} onDone={(s) => { setMode(''); setSlip(s); }} /> : null;
   if (mode === 'pay') return <PaymentDialog sale={sale} balance={balance} onClose={() => setMode('')} onDone={() => { reloadBase(); onChanged(); }} />;
 
   return (
     <Dialog title={sale.invoice_number} onClose={onClose} wide actions={<>
       {sale.status === 'completed' && balance > 0 && can('takePayment') && <button className="btn" onClick={() => setMode('pay')}>Record payment</button>}
       <button className="btn secondary" onClick={() => setMode('receipt')} disabled={!receipt}>Receipt</button>
-      {sale.status === 'completed' && can('voidSale') && <button className="btn danger" onClick={() => setMode('void')}>Void</button>}
+      {sale.status === 'completed' && can('returnItems') && toCents(sale.returned) < toCents(sale.total) && <button className="btn secondary" onClick={() => setMode('return')} disabled={!data}>Return items</button>}
+      {sale.status === 'completed' && can('voidSale') && toCents(sale.returned) === 0 && <button className="btn danger" onClick={() => setMode('void')}>Void</button>}
     </>}>
       <ErrorBox error={error} />
       {loading ? <Loading /> : data && <>
@@ -127,6 +143,13 @@ function SaleDetail({ sale, onClose, onChanged, can, startMode = '' }) {
         <h3 style={{ marginTop: '1rem' }}>Payments</h3>
         {!data.payments.length ? <p className="muted">No payments yet.</p> : data.payments.map((p) => (
           <div className="row between" key={p.id}><span>{methodName(p.method_id)} · {new Date(p.paid_at).toLocaleDateString()}</span><span className="num">{money(toCents(p.amount))}</span></div>))}
+        {data.returns.length > 0 && <>
+          <h3 style={{ marginTop: '1rem' }}>Returns</h3>
+          {data.returns.map((r) => (
+            <div className="row between" key={r.id}><span>{r.return_number} · {new Date(r.occurred_at).toLocaleDateString()} · {r.reason}</span>
+              <span className="num">−{money(toCents(r.total))}{toCents(r.refund_amount) > 0 ? ` (refunded ${money(toCents(r.refund_amount))})` : ''}</span></div>))}
+          <p className="muted small">A sale that has a return cannot be voided.</p>
+        </>}
         {sale.status === 'completed' && balance > 0 && <div className="notice" style={{ marginTop: '.6rem' }}>Balance due: <strong>{money(balance)}</strong></div>}
       </>}
     </Dialog>
