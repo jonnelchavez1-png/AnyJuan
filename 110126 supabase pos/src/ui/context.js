@@ -11,6 +11,8 @@ export const CAN = {
   returnItems: ['owner', 'manager'],
   viewDrawer: ['owner', 'manager', 'cashier', 'accountant'],
   useDrawer: ['owner', 'manager', 'cashier'],
+  syncOffline: ['owner', 'manager', 'cashier'],
+  reviewOffline: ['owner', 'manager'],
   takePayment: ['owner', 'manager', 'cashier'],
   editProducts: ['owner', 'manager'],
   adjustStock: ['owner', 'manager'],

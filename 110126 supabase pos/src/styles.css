@@ -202,3 +202,11 @@ tr.dim td { color: var(--ink-soft); }
   .app { display: block; } .main { padding: 0; }
   .overlay { position: static; background: none; padding: 0; } .dialog { box-shadow: none; max-width: none; padding: 0; }
 }
+
+/* offline status strip */
+.offbar { position: sticky; top: 0; z-index: 20; display: grid; gap: .35rem; margin: 0 0 .75rem; }
+.offrow { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .55rem .8rem; border-radius: 10px; background: var(--good-bg); color: #075a52; box-shadow: 0 1px 3px #0002; }
+.offrow.warn { background: var(--warn-bg); color: #5c3b00; }
+.offrow.bad { background: var(--bad-bg); color: #7d1a14; }
+.offrow .small { opacity: .9; margin-top: .15rem; }
+@media (max-width: 560px) { .offrow { flex-direction: column; align-items: stretch; } }

@@ -5,6 +5,7 @@ import { newId } from '../lib/ids.js';
 import { fromCents, parseAmount, toCents } from '../lib/money.js';
 import { printHtml } from '../lib/print.js';
 import { useApp } from '../ui/context.js';
+import { useOffline } from '../ui/useOffline.js';
 import { Badge, Dialog, ErrorBox, Field, Loading, PageHead, Tip, useLoad } from '../ui/kit.jsx';
 
 /** One place to say it: the drawer is not part of selling. Sales, returns, the dashboard and the tax report never read these figures. */
@@ -195,10 +196,13 @@ function MoveDialog({ kind, onClose, onDone }) {
 function CloseDialog({ cur, onClose, onDone }) {
   const { toast, money } = useApp();
   const { f, set, busy, setBusy, error, setError } = useForm({ counted: '', note: '' });
+  const off = useOffline();
+  const stuck = off.waiting + off.failed + off.others;
   const expected = toCents(cur.figures.expected_cash);
   const counted = parseAmount(f.counted);
   const diff = counted == null ? null : describeDifference(expected, counted);
   const save = async () => {
+    if (stuck > 0) return setError(`This device still has ${stuck} sale${stuck === 1 ? '' : 's'} that ${stuck === 1 ? 'is' : 'are'} not uploaded yet. Upload ${stuck === 1 ? 'it' : 'them'} first (Offline and sync), so the cash count includes ${stuck === 1 ? 'it' : 'them'}.`);
     if (counted == null) return setError('Count the cash in the drawer and type the total (0 if empty).');
     if (diff.kind !== 'balanced' && !f.note.trim()) return setError(`The count is ${differenceText(diff, money).toLowerCase()}. Please write a note that explains it.`);
     setBusy(true); setError('');

@@ -49,6 +49,7 @@ export function ReceiptDialog({ receipt, onClose }) {
         <h3>{business.name}</h3>
         {business.receipt_header && <div className="center">{business.receipt_header}</div>}
         <div className="center">{r.invoice_number}</div>
+        {r.pendingUpload && <div className="center small">Saved on this device (no internet). The official invoice number is given when it uploads.</div>}
         <div className="center">{new Date(r.occurred_at).toLocaleString(business.locale, { timeZone: business.timezone })}</div>
         {r.customer && <div className="center">Customer: {r.customer}</div>}
         {r.status === 'voided' && <div className="center"><strong>*** VOIDED ***</strong></div>}

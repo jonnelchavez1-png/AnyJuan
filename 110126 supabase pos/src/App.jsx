@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { configProblem } from './config.js';
 import { repo } from './data/repo.js';
 import { formatMoney } from './lib/money.js';
@@ -15,12 +15,16 @@ import TaxReport from './features/TaxReport.jsx';
 import Settings from './features/Settings.jsx';
 import Team from './features/Team.jsx';
 import Drawer from './features/Drawer.jsx';
+import Offline from './features/Offline.jsx';
+import OfflineBar from './ui/OfflineBar.jsx';
+import { offline } from './data/offline/manager.js';
 
 const ROUTES = [
   { path: 'dashboard', label: 'Dashboard', icon: '▤', can: 'viewDashboard', view: Dashboard },
   { path: 'sell', label: 'Sell', icon: '＋', can: 'sell', view: Sell },
   { path: 'sales', label: 'Sales', icon: '☰', can: 'viewSales', view: Sales },
   { path: 'drawer', label: 'Cash drawer', icon: '▭', can: 'viewDrawer', view: Drawer },
+  { path: 'offline', label: 'Offline and sync', icon: '⇅', can: 'syncOffline', view: Offline },
   { path: 'products', label: 'Products', icon: '▣', can: null, view: Products },
   { path: 'tax', label: 'Tax report', icon: '％', can: 'viewDashboard', view: TaxReport },
   { path: 'expenses', label: 'Expenses', icon: '−', can: 'viewExpenses', view: Expenses },
@@ -66,6 +70,7 @@ function Gate() {
   }, []);
 
   const userId = session?.user?.id;
+  useEffect(() => { if (userId) offline.setUser({ id: userId, email: session.user.email, name: profile?.name, role: profile?.role }); }, [userId, profile?.name, profile?.role]); // eslint-disable-line react-hooks/exhaustive-deps
   const loadProfile = useCallback(async () => {
     if (!userId) { setProfile(null); return; }
     setChecking(true);
@@ -104,6 +109,7 @@ function Shell({ user, profile }) {
   const [toasts, setToasts] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [period, setPeriod] = useState({ preset: 'month', custom: null }); // shared by Dashboard, Sales, Expenses, Tax report
+  const [tick, setTick] = useState(0); // bumped after an upload so the open screen re-reads its numbers
   const hash = useHash();
 
   const loadBase = useCallback(async () => {
@@ -118,12 +124,20 @@ function Shell({ user, profile }) {
     } catch (e) { setLoadError(e.message); }
   }, []);
   useEffect(() => { loadBase(); }, [loadBase]);
+  useEffect(() => offline.onSynced((r) => {
+    loadBase();
+    if (window.location.hash.replace(/^#\/?/, '') !== 'sell') setTick((t) => t + 1); // never rebuild the Sell screen: it may hold a sale in progress
+    toastRef.current?.(`${r.sent} offline sale${r.sent === 1 ? '' : 's'} uploaded`, 'good');
+  }), [loadBase]);
 
+  const toastRef = useRef(null);
   const toast = useCallback((message, tone = '') => {
     const id = Math.random();
     setToasts((t) => [...t, { id, message, tone }].slice(-3));
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), tone === 'bad' ? 7000 : 3500);
   }, []);
+
+  useEffect(() => { toastRef.current = toast; }, [toast]);
 
   const role = profile.role;
   const can = useCallback((action) => (CAN[action] || []).includes(role), [role]);
@@ -164,7 +178,7 @@ function Shell({ user, profile }) {
           <div className="who">{profile.name}<br /><span style={{ textTransform: 'capitalize' }}>{role}</span></div>
           <button className="btn ghost small" onClick={() => repo.signOut()}>Sign out</button>
         </aside>
-        <main className="main" id="main"><View key={route.path} /></main>
+        <main className="main" id="main"><OfflineBar /><View key={`${route.path}-${tick}`} /></main>
       </div>
       <div className="toasts" aria-live="polite">{toasts.map((t) => <div key={t.id} className={`toast ${t.tone}`}>{t.message}</div>)}</div>
     </AppContext.Provider>

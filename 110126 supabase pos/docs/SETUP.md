@@ -61,3 +61,8 @@ How to use it: see `docs/DRAWER.md`.
 Settings > Business: the header (address, phone, tax ID) and footer take several lines. In the receipt window,
 choose the paper (58 mm roll, 80 mm roll, A4/Letter); the choice is remembered on that device.
 Print sends only the receipt, never the whole screen.
+
+## Adding Offline selling to a shop that was set up earlier
+First make sure `update-returns.sql` has been run. Then open `supabase/update-offline.sql`, paste it into Supabase > SQL Editor > New query and click Run
+(BEFORE uploading the new app files). It says "Offline selling installed". It is safe to run twice. Then upload the new `src`, `public`, `docs` folders.
+How to use it: see `docs/OFFLINE.md`.

@@ -1,3 +1,5 @@
+> **Update:** offline selling is now built. See `docs/OFFLINE.md`. The notes below are the original design plan, kept for history.
+
 # Offline readiness (not built yet, designed for)
 
 Today the app is **online only**. These pieces already exist so offline can be added later without redoing the screens or the database:

@@ -4,11 +4,14 @@ import { computeSale } from '../lib/tax.js';
 import { fromCents, fromMilli, formatQuantity, parseAmount, parseQuantity, toCents } from '../lib/money.js';
 import { newId } from '../lib/ids.js';
 import { useApp } from '../ui/context.js';
+import { useOffline } from '../ui/useOffline.js';
+import { offline } from '../data/offline/manager.js';
 import { Dialog, Field, PageHead } from '../ui/kit.jsx';
 import { ReceiptDialog } from '../ui/Receipt.jsx';
 
 export default function Sell() {
-  const { business, products, categories, customers, channels, methods, money, toast, reload } = useApp();
+  const { business, products, categories, customers, channels, methods, money, toast, reload, can } = useApp();
+  const net = useOffline();
   const [search, setSearch] = useState('');
   const [cat, setCat] = useState('all');
   const [cart, setCart] = useState([]); // [{productId, qty (milli), text}]
@@ -100,6 +103,10 @@ export default function Sell() {
       if (receivedCents == null) { setError('The cash received is not a valid amount.'); return; }
       if (receivedCents < payNow) { setError(`Cash received (${money(receivedCents)}) is less than the amount to pay now (${money(payNow)}). Choose Part payment or enter more.`); return; }
     }
+    // no internet: keep the cashier's discount limit at the till too (the server would only be able to flag it afterwards)
+    if (offline.isOffline() && calc.discount > 0 && !can('voidSale') && calc.discount > Math.round(calc.subtotal * Number(business.cashier_max_discount_pct || 0) / 100)) {
+      setError(`This discount needs a manager (cashiers may give up to ${Number(business.cashier_max_discount_pct || 0)} percent).`); return;
+    }
     if (balance > 0 && !customerId) { setError('Choose a customer for a sale that is not fully paid, so you know who owes the balance.'); return; }
     setBusy(true);
     const { saleId, paymentId } = attempt.current;
@@ -108,7 +115,13 @@ export default function Sell() {
       if (discount) { sale.discount_type = discount.type; sale.discount_value = discount.type === 'amount' ? fromCents(discount.value) : discount.value; }
       const items = cart.map((l) => ({ product_id: l.productId, quantity: fromMilli(l.qty) }));
       const payments = payNow > 0 ? [{ id: paymentId, method_id: methodId, amount: fromCents(payNow) }] : [];
-      const res = await repo.createSale(sale, items, payments);
+      const offlineInfo = {
+        unitPrices: Object.fromEntries(cart.map((l) => [l.productId, Number(byId.get(l.productId).price)])),
+        taxMode: calc.mode, taxRate: calc.mode === 'none' ? 0 : Number(business.tax_rate), totalCents: calc.total,
+        customerName: customer?.name || '', paymentLabel: payNow > 0 ? methods.find((m) => m.id === methodId)?.name || '' : 'Pay later',
+        lines: cart.map((l) => ({ name: byId.get(l.productId).name, quantity: fromMilli(l.qty) })),
+      };
+      const res = await repo.createSale(sale, items, payments, offlineInfo);
       const serverTotal = toCents(res.total);
       if (serverTotal !== calc.total) toast(`Note: the server total (${money(serverTotal)}) differs from the screen (${money(calc.total)}). The server amount is the real one.`, 'bad');
       const method = methods.find((m) => m.id === methodId)?.name || 'Payment';
@@ -117,9 +130,9 @@ export default function Sell() {
         items: cart.map((l, i) => { const p = byId.get(l.productId); return { name: p.name, quantity: fromMilli(l.qty), unitPrice: toCents(p.price), gross: calc.lines[i].gross }; }),
         subtotal: calc.subtotal, discount: calc.discount, tax: calc.tax, taxMode: calc.mode, taxName: business.tax_name, taxRate: Number(business.tax_rate),
         total: serverTotal, payments: payNow > 0 ? [{ method, amount: payNow }] : [], balance: Math.max(serverTotal - payNow, 0),
-        received: showCash && receivedCents != null ? receivedCents : null, change: changeDue,
+        received: showCash && receivedCents != null ? receivedCents : null, change: changeDue, pendingUpload: !!res.offline,
       });
-      toast(res.duplicate ? 'This sale was already recorded.' : 'Sale recorded', 'good');
+      toast(res.offline ? 'Saved on this device (no internet). It uploads by itself.' : res.duplicate ? 'This sale was already recorded.' : 'Sale recorded', 'good');
       setCart([]); setDiscText(''); setCustomerId(''); setPartialText(''); setReceived(''); setNote(''); setPayMode('full');
       attempt.current = { saleId: newId(), paymentId: newId() };
       reload();
@@ -186,7 +199,7 @@ export default function Sell() {
               <Field label="Customer" id="cust"><select id="cust" className="input" value={customerId} onChange={(e) => setCustomerId(e.target.value)}><option value="">Walk-in</option>{customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
               <Field label="Channel" id="chan"><select id="chan" className="input" value={channelId} onChange={(e) => setChannelId(e.target.value)}><option value="">—</option>{channels.filter((c) => c.active).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
             </div>
-            <button className="btn ghost small" onClick={() => setNewCustomer(true)}>＋ New customer</button>
+            {net.online ? <button className="btn ghost small" onClick={() => setNewCustomer(true)}>＋ New customer</button> : <span className="small muted">New customers need the internet. Use Walk-in for now.</span>}
 
             <div className="grid2" style={{ marginTop: '.5rem' }}>
               <Field label="Payment" id="pm"><select id="pm" className="input" value={payMode} onChange={(e) => setPayMode(e.target.value)}><option value="full">Paid in full</option><option value="partial">Part payment</option><option value="later">Pay later</option></select></Field>

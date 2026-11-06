@@ -739,6 +739,37 @@ grant select on public.sales_overview to authenticated;
 --   p_items    [{"product_id": uuid, "quantity": number}]       prices always come from the products table
 --   p_payments [{"id"?: uuid, "method_id": uuid, "amount": number}]   may be less than the total (pay later)
 -- Sending the same sale id twice is safe: the second call changes nothing and says "duplicate".
+
+-- OFFLINE SALES ------------------------------------------------------------------------------------------
+-- A sale made on a device with no internet is kept on that device and uploaded later through the SAME create_sale
+-- function (with "offline": true). These tables only record that it happened and what the owner should check.
+create table if not exists public.sale_offline (
+  sale_id     uuid primary key references public.sales (id),
+  client_time timestamptz not null,                       -- the time the device said the sale happened
+  uploaded_at timestamptz not null default now(),
+  uploaded_by uuid references public.profiles (id)
+);
+create table if not exists public.sale_reviews (
+  id            uuid primary key default gen_random_uuid(),
+  sale_id       uuid not null references public.sales (id),
+  kind          text not null check (kind in ('stock', 'price', 'tax', 'discount', 'old', 'inactive')),
+  note          text not null,
+  created_at    timestamptz not null default now(),
+  resolved_at   timestamptz,
+  resolved_by   uuid references public.profiles (id),
+  resolved_note text,
+  unique (sale_id, kind)
+);
+create index if not exists sale_reviews_open_idx on public.sale_reviews (created_at) where resolved_at is null;
+alter table public.sale_offline enable row level security;
+alter table public.sale_reviews enable row level security;
+drop policy if exists sale_offline_read on public.sale_offline;
+create policy sale_offline_read on public.sale_offline for select to authenticated using (private.has_role('owner', 'manager', 'accountant'));
+drop policy if exists sale_reviews_read on public.sale_reviews;
+create policy sale_reviews_read on public.sale_reviews for select to authenticated using (private.has_role('owner', 'manager'));
+revoke all on public.sale_offline, public.sale_reviews from anon, authenticated;
+grant select on public.sale_offline, public.sale_reviews to authenticated;
+
 create or replace function public.create_sale(p_sale jsonb, p_items jsonb, p_payments jsonb default '[]'::jsonb)
 returns jsonb
 language plpgsql
@@ -768,6 +799,11 @@ declare
   v_cogs      numeric(14,2);
   v_paid      numeric(14,2);
   v_after     numeric(12,3);
+  v_before    numeric(12,3);
+  v_off       boolean;                 -- true when the sale was made on a device with no internet and is being uploaded now
+  v_flags     jsonb := '{}'::jsonb;    -- things for the owner to check (offline sales only): kind -> note
+  v_cmode     text;
+  v_crate     numeric;
   r           record;
 begin
   if v_uid is null or not private.has_role('owner', 'manager', 'cashier') then
@@ -789,16 +825,36 @@ begin
   end if;
 
   select * into v_biz from public.businesses limit 1;
+  v_off := coalesce(p_sale ->> 'offline', '') = 'true';
   if v_biz.tax_enabled and v_biz.tax_rate > 0 then
     v_mode := v_biz.tax_mode;
     v_rate := v_biz.tax_rate;
   end if;
+  -- an offline sale keeps the tax the customer was shown at the time; if it differs from today's setting, it is flagged
+  if v_off and nullif(p_sale ->> 'tax_mode', '') is not null then
+    v_cmode := p_sale ->> 'tax_mode';
+    v_crate := coalesce(nullif(p_sale ->> 'tax_rate', '')::numeric, 0);
+    if v_cmode not in ('none', 'inclusive', 'exclusive') or v_crate < 0 or v_crate > 100 then
+      raise exception 'The tax saved with this offline sale is not valid.';
+    end if;
+    if v_cmode = 'none' or v_crate = 0 then v_cmode := 'none'; v_crate := 0; end if;
+    if v_cmode is distinct from v_mode or v_crate is distinct from v_rate then
+      v_flags := v_flags || jsonb_build_object('tax',
+        format('Tax at the time of sale was %s %s%%, the current setting is %s %s%%.', v_cmode, v_crate, v_mode, v_rate));
+    end if;
+    v_mode := v_cmode;
+    v_rate := v_crate;
+  end if;
 
   v_occurred := least(coalesce(nullif(p_sale ->> 'occurred_at', '')::timestamptz, now()), now());
   -- a sale cannot be back-dated far: cashiers 3 days (enough for a short offline spell), owner/manager 1 year
-  v_window := case when private.has_role('owner', 'manager') then interval '366 days' else interval '3 days' end;
+  v_window := case when v_off then interval '35 days'
+                   when private.has_role('owner', 'manager') then interval '366 days' else interval '3 days' end;
   if v_occurred < now() - v_window then
     raise exception 'The sale date is too far in the past.';
+  end if;
+  if v_off and v_occurred < now() - interval '3 days' and not private.has_role('owner', 'manager') then
+    v_flags := v_flags || jsonb_build_object('old', 'This sale was made more than 3 days before it was uploaded.');
   end if;
   -- invoice numbers are always made by the server (a device cannot choose or pre-claim one)
   v_invoice  := 'INV-' || lpad(nextval('public.invoice_seq')::text, 6, '0');
@@ -826,16 +882,21 @@ begin
   end if;
 
   -- lines: the same product twice is merged; the price and cost come from the products table, not the app
+  -- (an offline sale uses the price the customer was shown; any difference from today's price is flagged below)
   insert into public.sale_items (sale_id, line_no, product_id, name, quantity, unit_price, unit_cost, line_gross)
   select v_id,
          row_number() over (order by x.first_pos),
-         p.id, p.name, x.qty, p.price, p.cost_price, round(x.qty * p.price, 2)
+         p.id, p.name, x.qty,
+         case when v_off and x.cprice is not null and x.cprice >= 0 and x.cprice < 1000000000000 then round(x.cprice, 2) else p.price end,
+         p.cost_price,
+         round(x.qty * case when v_off and x.cprice is not null and x.cprice >= 0 and x.cprice < 1000000000000 then round(x.cprice, 2) else p.price end, 2)
   from (select (t.item ->> 'product_id')::uuid        as product_id,
                sum((t.item ->> 'quantity')::numeric)  as qty,
-               min(t.pos)                             as first_pos
+               min(t.pos)                             as first_pos,
+               (array_agg(nullif(t.item ->> 'unit_price', '')::numeric order by t.pos))[1] as cprice
         from jsonb_array_elements(p_items) with ordinality as t(item, pos)
         group by 1) x
-  join public.products p on p.id = x.product_id and p.active;
+  join public.products p on p.id = x.product_id and (p.active or v_off);
   get diagnostics v_found = row_count;
 
   select count(distinct (item ->> 'product_id')::uuid) into v_expected from jsonb_array_elements(p_items) as item;
@@ -852,8 +913,28 @@ begin
     from public.sale_items si join public.products p on p.id = si.product_id
    where si.sale_id = v_id and p.track_stock and p.quantity < si.quantity
    limit 1;
-  if v_bad is not null then
+  if v_bad is not null and not v_off then
     raise exception 'Not enough stock for %', v_bad;
+  end if;
+  if v_off then
+    -- the customer already walked away with the goods: record the sale, take stock down to zero, and flag it for a recount
+    select string_agg(format('%s: sold %s, only %s was in the system', si.name, si.quantity, p.quantity), '; ' order by si.line_no)
+      into v_bad
+      from public.sale_items si join public.products p on p.id = si.product_id
+     where si.sale_id = v_id and p.track_stock and p.quantity < si.quantity;
+    if v_bad is not null then
+      v_flags := v_flags || jsonb_build_object('stock', v_bad || '. Stock was set to 0: please recount.');
+    end if;
+    select string_agg(format('%s: sold at %s, price now %s', si.name, si.unit_price, p.price), '; ' order by si.line_no)
+      into v_bad
+      from public.sale_items si join public.products p on p.id = si.product_id
+     where si.sale_id = v_id and si.unit_price <> p.price;
+    if v_bad is not null then
+      v_flags := v_flags || jsonb_build_object('price', v_bad);
+    end if;
+    if exists (select 1 from public.sale_items si join public.products p on p.id = si.product_id where si.sale_id = v_id and not p.active) then
+      v_flags := v_flags || jsonb_build_object('inactive', 'A product on this sale was switched off before the sale was uploaded.');
+    end if;
   end if;
 
   -- discount
@@ -877,7 +958,11 @@ begin
 
   if v_discount > 0 and not private.has_role('owner', 'manager')
      and v_discount > round(v_subtotal * v_biz.cashier_max_discount_pct / 100, 2) then
-    raise exception 'This discount needs a manager (cashiers may give up to % percent).', v_biz.cashier_max_discount_pct;
+    if not v_off then
+      raise exception 'This discount needs a manager (cashiers may give up to % percent).', v_biz.cashier_max_discount_pct;
+    end if;
+    v_flags := v_flags || jsonb_build_object('discount',
+      format('The discount of %s is more than a cashier may give (%s%%).', v_discount, v_biz.cashier_max_discount_pct));
   end if;
 
   -- share the discount over the lines to the cent: round each share down, then give the leftover
@@ -958,12 +1043,22 @@ begin
      where si.sale_id = v_id and p.track_stock
      order by si.line_no
   loop
-    update public.products set quantity = quantity - r.quantity where id = r.product_id
+    select quantity into v_before from public.products where id = r.product_id;
+    update public.products set quantity = case when v_off then greatest(quantity - r.quantity, 0) else quantity - r.quantity end
+     where id = r.product_id
     returning quantity into v_after;
     insert into public.inventory_movements (product_id, type, quantity_change, quantity_after, reference_id, actor_id)
-    values (r.product_id, 'sale', -r.quantity, v_after, v_id, v_uid);
+    values (r.product_id, 'sale', v_after - v_before, v_after, v_id, v_uid);
   end loop;
   perform set_config('app.stock_rpc', '', true);
+
+  if v_off then
+    insert into public.sale_offline (sale_id, client_time, uploaded_by) values (v_id, v_occurred, v_uid);
+    insert into public.sale_reviews (sale_id, kind, note)
+    select v_id, f.key, f.value #>> '{}' from jsonb_each(v_flags) f;
+    return jsonb_build_object('ok', true, 'duplicate', false, 'sale_id', v_id, 'invoice_number', v_invoice,
+                              'total', v_total, 'tax_amount', v_tax, 'flagged', (select count(*) from jsonb_object_keys(v_flags)));
+  end if;
 
   return jsonb_build_object('ok', true, 'duplicate', false, 'sale_id', v_id, 'invoice_number', v_invoice,
                             'total', v_total, 'tax_amount', v_tax);
@@ -1949,6 +2044,54 @@ grant execute on function public.void_sale(uuid, text)                          
 grant execute on function public.record_payment(uuid, uuid, uuid, numeric, text)       to authenticated;
 grant execute on function public.adjust_stock(uuid, numeric, text)                     to authenticated;
 grant execute on function public.get_dashboard(date, date, date, date)                 to authenticated;
+
+
+-- server_time: the app asks this when it is online, to know how far the device clock is off (offline sales are stamped with it).
+create or replace function public.server_time()
+returns timestamptz language sql stable security definer set search_path = public as $$ select now() $$;
+
+-- get_sale_reviews: offline sales that need a person to look at them (stock, price, tax or discount differed when uploaded).
+create or replace function public.get_sale_reviews(p_include_resolved boolean default false)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not private.has_role('owner', 'manager') then
+    raise exception 'You are not allowed to see this.';
+  end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', r.id, 'sale_id', r.sale_id, 'invoice_number', s.invoice_number, 'kind', r.kind, 'note', r.note,
+             'total', s.total, 'occurred_at', s.occurred_at, 'uploaded_at', o.uploaded_at, 'cashier', pr.name,
+             'resolved_at', r.resolved_at, 'resolved_note', r.resolved_note) order by r.created_at desc)
+      from public.sale_reviews r
+      join public.sales s on s.id = r.sale_id
+      left join public.sale_offline o on o.sale_id = r.sale_id
+      left join public.profiles pr on pr.id = s.cashier_id
+     where p_include_resolved or r.resolved_at is null), '[]'::jsonb);
+end $$;
+
+-- resolve_sale_review: "I checked this". Never changes the sale itself.
+create or replace function public.resolve_sale_review(p_id uuid, p_note text default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_row public.sale_reviews%rowtype;
+begin
+  if auth.uid() is null or not private.has_role('owner', 'manager') then
+    raise exception 'You are not allowed to do that.';
+  end if;
+  update public.sale_reviews set resolved_at = coalesce(resolved_at, now()), resolved_by = coalesce(resolved_by, auth.uid()),
+         resolved_note = coalesce(resolved_note, nullif(trim(p_note), ''))
+   where id = p_id returning * into v_row;
+  if not found then raise exception 'That item was not found.'; end if;
+  insert into public.audit_logs (action, entity, entity_id, actor_id, details)
+  values ('resolve', 'sale_reviews', p_id::text, auth.uid(), jsonb_build_object('sale_id', v_row.sale_id, 'kind', v_row.kind, 'note', p_note));
+  return jsonb_build_object('ok', true);
+end $$;
+
+revoke all on function public.server_time()                      from public, anon;
+revoke all on function public.get_sale_reviews(boolean)          from public, anon;
+revoke all on function public.resolve_sale_review(uuid, text)    from public, anon;
+grant execute on function public.server_time()                   to authenticated;
+grant execute on function public.get_sale_reviews(boolean)       to authenticated;
+grant execute on function public.resolve_sale_review(uuid, text) to authenticated;
 
 commit;
 

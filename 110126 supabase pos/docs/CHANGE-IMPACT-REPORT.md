@@ -32,3 +32,11 @@ Rollback: the old version is untouched in `legacy/` and in git history (`main`).
 - Proof it changes nothing: after the update all earlier checks give the same results (unit 80, browser 110, database 1,151 on a fresh and an upgraded database,
   `verify.sql`), plus new ones for the drawer (unit +4, browser +18, database 35). A browser check also confirms Sales and Dashboard show identical figures before and after using the drawer.
 - Rollback: the app is tagged `before-drawer-shifts` in git. The two new tables can stay in the database without harm.
+
+## Update: offline selling (additive)
+- New tables `sale_offline`, `sale_reviews`; new functions `server_time`, `get_sale_reviews`, `resolve_sale_review`; `create_sale` accepts an extra `offline` flag and
+  price/tax snapshot. **Online sales behave exactly as before** (same stock refusal, same price and tax rules, same results). Upgrading: run `supabase/update-offline.sql` once.
+- App: service worker (`public/sw.js`), on-device queue, status strip, "Offline and sync" page. Sell, Receipt and Drawer got small changes (temporary receipt number, drawer cannot close while sales are unsent).
+- Reports and the Dashboard show the last saved figures when offline and say so. Voids, returns, expenses, new customers and the drawer need the internet.
+- Proof: unit 96, browser 126 (existing) + 34 (offline, real Chromium with service worker and IndexedDB), database 1,151 + 35 + 39 on a fresh and on upgraded databases, `verify.sql` passes; update script run twice.
+- Rollback: the app is tagged `before-offline` in git. The new tables and functions can stay in the database without harm.

@@ -6,6 +6,8 @@
 // sale really happened. See docs/OFFLINE-READINESS.md.
 
 import { getClient } from './client.js';
+import { offline, withTimeout } from './offline/manager.js';
+import { classifyError } from '../lib/sync.js';
 
 /** Turn a technical error into a sentence a shop owner can act on. */
 export function friendlyError(error) {
@@ -26,9 +28,12 @@ async function run(promise) {
   try {
     res = await promise;
   } catch (e) {
-    throw new Error(friendlyError(e));
+    const msg = friendlyError(e);
+    if (classifyError(new Error(msg)) === 'network') offline.noteNetwork(false);
+    throw new Error(msg);
   }
   if (res?.error) throw new Error(friendlyError(res.error));
+  offline.noteNetwork(true);
   return res?.data ?? null;
 }
 
@@ -53,8 +58,14 @@ async function fetchAll(build, { page = 1000, max = 20000 } = {}) {
 export const repo = {
   // ---------- sign in ----------
   async getSession() {
-    const { data } = await sb().auth.getSession();
-    return data?.session || null;
+    let data; let error;
+    try { ({ data, error } = await sb().auth.getSession()); } catch (e) { error = e; }
+    if (data?.session) return data.session;
+    // No internet and the saved sign-in could not be renewed: keep the same person working with the saved copy of the shop.
+    // (Sales are saved on the device; when the internet is back the real sign-in is renewed automatically.)
+    const soft = offline.rememberedUser();
+    if (soft && (offline.isOffline() || (error && classifyError(error) === 'network'))) return { user: { id: soft.id, email: soft.email }, soft: true };
+    return null;
   },
   onAuthChange(callback) {
     const { data } = sb().auth.onAuthStateChange((event, session) => callback(session, event));
@@ -67,6 +78,7 @@ export const repo = {
     return run(sb().auth.signUp({ email: email.trim(), password, options: { data: { name: name.trim() } } }));
   },
   async signOut() {
+    await offline.onSignOut();
     await sb().auth.signOut();
   },
   /** Change the signed-in person's own password (also used after clicking an email reset link). */
@@ -77,18 +89,18 @@ export const repo = {
     return run(sb().auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin }));
   },
   async getProfile(userId) {
-    return run(sb().from('profiles').select('*').eq('id', userId).maybeSingle());
+    return offline.cachedRead(`profile:${userId}`, () => run(sb().from('profiles').select('*').eq('id', userId).maybeSingle()), { scope: 'private' });
   },
 
   // ---------- business and lists ----------
   async getBusiness() {
-    return run(sb().from('businesses').select('*').limit(1).maybeSingle());
+    return offline.cachedRead('business', () => run(sb().from('businesses').select('*').limit(1).maybeSingle()));
   },
   async saveBusiness(id, patch) {
     return run(sb().from('businesses').update(patch).eq('id', id).select().single());
   },
   async listLookup(table) {
-    return run(sb().from(table).select('*').order('sort_order').order('name'));
+    return offline.cachedRead(`lookup:${table}`, () => run(sb().from(table).select('*').order('sort_order').order('name')));
   },
   async saveLookup(table, row) {
     const { id, ...fields } = row;
@@ -99,7 +111,9 @@ export const repo = {
 
   // ---------- products and customers ----------
   async listProducts() {
-    return run(sb().from('products').select('*').order('name'));
+    // the shared stock minus anything sold on this device that has not been uploaded yet
+    const rows = await offline.cachedRead('products', () => run(sb().from('products').select('*').order('name')));
+    return offline.applyPendingStock(rows || []);
   },
   /** Stock is never written here: it changes only through createSale, voidSale and adjustStock. */
   async saveProduct(row) {
@@ -115,7 +129,7 @@ export const repo = {
       .order('created_at', { ascending: false }).limit(50));
   },
   async listCustomers() {
-    return run(sb().from('customers').select('*').order('name'));
+    return offline.cachedRead('customers', () => run(sb().from('customers').select('*').order('name')));
   },
   async saveCustomer(row) {
     const { id, ...fields } = row;
@@ -130,8 +144,20 @@ export const repo = {
    * items: [{product_id, quantity}]   payments: [{id, method_id, amount}]
    * The server prices everything itself. Safe to call twice with the same sale.id.
    */
-  async createSale(sale, items, payments) {
-    return run(sb().rpc('create_sale', { p_sale: sale, p_items: items, p_payments: payments }));
+  async createSale(sale, items, payments, offlineInfo) {
+    const send = () => run(sb().rpc('create_sale', { p_sale: sale, p_items: items, p_payments: payments }));
+    if (!offlineInfo) return send();
+    // `offlineInfo` (from the Sell screen) says what the customer was shown, so a sale can be kept on the device
+    // when there is no internet. The same sale id is used later, so it can never be recorded twice.
+    const keep = () => offline.queueSale({ sale, items: items.map((it) => ({ ...it, unit_price: offlineInfo.unitPrices[it.product_id] })), payments, info: offlineInfo });
+    if (offline.isOffline()) return keep();
+    try {
+      return await withTimeout(send(), 12000, 'Cannot reach the server. The request timed out.');
+    } catch (e) {
+      const kind = classifyError(e);
+      if (kind === 'network' || kind === 'auth') { if (kind === 'network') offline.noteNetwork(false); return keep(); }
+      throw e;
+    }
   },
   async voidSale(saleId, reason) {
     return run(sb().rpc('void_sale', { p_sale_id: saleId, p_reason: reason }));
@@ -142,24 +168,24 @@ export const repo = {
     }));
   },
   async listSales({ fromInstant, toInstant } = {}) {
-    return fetchAll(() => {
+    return offline.cachedRead(`sales:${fromInstant || ''}:${toInstant || ''}`, () => fetchAll(() => {
       let q = sb().from('sales_overview').select('*').order('occurred_at', { ascending: false }).order('id');
       if (fromInstant) q = q.gte('occurred_at', fromInstant);
       if (toInstant) q = q.lt('occurred_at', toInstant);
       return q;
-    });
+    }), { scope: 'private', timeout: 30000 });
   },
   /** Money back to a customer: some or all items of one sale. return: {id, sale_id, reason, refund_method_id?}; items: [{sale_item_id, quantity, restock}] */
   async createReturn(ret, items) {
     return run(sb().rpc('create_return', { p_return: ret, p_items: items }));
   },
   async listReturns({ fromInstant, toInstant } = {}) {
-    return fetchAll(() => {
+    return offline.cachedRead(`returns:${fromInstant || ''}:${toInstant || ''}`, () => fetchAll(() => {
       let q = sb().from('returns').select('*').order('occurred_at', { ascending: false }).order('id');
       if (fromInstant) q = q.gte('occurred_at', fromInstant);
       if (toInstant) q = q.lt('occurred_at', toInstant);
       return q;
-    });
+    }), { scope: 'private', timeout: 30000 });
   },
   /** Every return of one sale, each with its lines. */
   async getSaleReturns(saleId) {
@@ -176,12 +202,12 @@ export const repo = {
 
   // ---------- expenses ----------
   async listExpenses({ from, to } = {}) {
-    return fetchAll(() => {
+    return offline.cachedRead(`expenses:${from || ''}:${to || ''}`, () => fetchAll(() => {
       let q = sb().from('expenses').select('*').order('expense_date', { ascending: false }).order('created_at', { ascending: false }).order('id');
       if (from) q = q.gte('expense_date', from);
       if (to) q = q.lte('expense_date', to);
       return q;
-    });
+    }), { scope: 'private', timeout: 30000 });
   },
   async saveExpense(row, userId) {
     const { id, ...fields } = row;
@@ -195,9 +221,9 @@ export const repo = {
 
   // ---------- reports ----------
   async getDashboard(range, previous) {
-    return run(sb().rpc('get_dashboard', {
+    return offline.cachedRead(`dashboard:${range.from}:${range.to}:${previous.from}:${previous.to}`, () => run(sb().rpc('get_dashboard', {
       p_from: range.from, p_to: range.to, p_prev_from: previous.from, p_prev_to: previous.to,
-    }));
+    })), { scope: 'private', timeout: 30000 });
   },
 
   // ---------- cash drawer shifts (separate from selling: nothing here changes a sale) ----------
@@ -224,7 +250,15 @@ export const repo = {
   },
 
   async getTaxReport(range) {
-    return run(sb().rpc('get_tax_report', { p_from: range.from, p_to: range.to }));
+    return offline.cachedRead(`tax:${range.from}:${range.to}`, () => run(sb().rpc('get_tax_report', { p_from: range.from, p_to: range.to })), { scope: 'private', timeout: 30000 });
+  },
+
+  // ---------- offline sales that need a person to look at them ----------
+  async getSaleReviews(includeResolved = false) {
+    return run(sb().rpc('get_sale_reviews', { p_include_resolved: includeResolved }));
+  },
+  async resolveSaleReview(id, note) {
+    return run(sb().rpc('resolve_sale_review', { p_id: id, p_note: note || null }));
   },
 
   // ---------- team ----------
