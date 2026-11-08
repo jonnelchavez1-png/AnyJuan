@@ -130,6 +130,24 @@ function Shell({ user, profile }) {
     toastRef.current?.(`${r.sent} offline sale${r.sent === 1 ? '' : 's'} uploaded`, 'good');
   }), [loadBase]);
 
+  // Keep every device in step with the others: when the window comes back into view, and every 90 seconds while it is open,
+  // read the shared lists again (products, stock, customers...). Read-only screens (Dashboard, Sales, Tax report) are redrawn too,
+  // but never while a window is open or a box is being typed in, and never the Sell screen.
+  useEffect(() => {
+    let last = 0;
+    const refresh = () => {
+      if (document.visibilityState !== 'visible' || offline.isOffline() || Date.now() - last < 5000) return;
+      last = Date.now();
+      loadBase();
+      const route = window.location.hash.replace(/^#\/?/, '');
+      const typing = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+      if (['dashboard', 'sales', 'tax'].includes(route) && !typing && !document.querySelector('[role="dialog"]')) setTick((t) => t + 1);
+    };
+    const id = setInterval(refresh, 90000);
+    document.addEventListener('visibilitychange', refresh); window.addEventListener('focus', refresh);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', refresh); window.removeEventListener('focus', refresh); };
+  }, [loadBase]);
+
   const toastRef = useRef(null);
   const toast = useCallback((message, tone = '') => {
     const id = Math.random();
