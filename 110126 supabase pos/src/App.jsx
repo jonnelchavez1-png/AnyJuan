@@ -17,6 +17,7 @@ import Team from './features/Team.jsx';
 import Drawer from './features/Drawer.jsx';
 import Offline from './features/Offline.jsx';
 import OfflineBar from './ui/OfflineBar.jsx';
+import { Brand } from './ui/Brand.jsx';
 import { offline } from './data/offline/manager.js';
 
 const ROUTES = [
@@ -184,10 +185,11 @@ function Shell({ user, profile }) {
       <div className="app">
         <header className="topbar">
           <button className="btn small" onClick={() => setMenuOpen((o) => !o)} aria-expanded={menuOpen} aria-controls="sidebar">☰ Menu</button>
-          <strong>{business.name}</strong>
+          <Brand size="sm" tone="dark" byline={false} />
+          <strong className="bm-biz">{business.name}</strong>
         </header>
         <aside id="sidebar" className={`sidebar ${menuOpen ? 'open' : ''}`}>
-          <div className="brand">{business.name}<small>AnyJuanPOS</small></div>
+          <div className="side-brand"><Brand size="md" tone="dark" /><div className="biz">{business.name}</div></div>
           <nav className="nav" aria-label="Main">
             {allowed.map((r) => (
               <a key={r.path} href={`#/${r.path}`} aria-current={r === route ? 'page' : undefined}><span aria-hidden="true">{r.icon}</span>{r.label}</a>
