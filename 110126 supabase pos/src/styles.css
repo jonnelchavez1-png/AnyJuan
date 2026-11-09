@@ -217,3 +217,116 @@ tr.dim td { color: var(--ink-soft); }
 .pwtoggle { position: absolute; right: .35rem; top: 50%; transform: translateY(-50%); min-height: 2.25rem; min-width: 3.4rem; padding: 0 .6rem; border: 0; border-radius: .5rem; background: transparent; color: var(--tide-strong); font: inherit; font-weight: 600; cursor: pointer; }
 .pwtoggle:hover { background: rgba(0, 0, 0, .06); }
 input::-ms-reveal, input::-ms-clear { display: none; }
+
+/* ---- AnyJuanPOS brand (logo + name + "by Jonnel de Chavez"): same look on the sign-in page and inside the app ---- */
+.brandmark { display: flex; align-items: center; gap: var(--bm-gap, 10px); min-width: 0; }
+.brandmark.light { --wm-ink: #0b2a44; --wm-accent: #14679f; --bm-by-color: #5a7186; }
+.brandmark.dark { --wm-ink: #ffffff; --wm-accent: #5ab0e6; --bm-by-color: #a9c6dc; }
+.brandmark.lg { --bm-logo: 50px; --bm-word: 34px; --bm-by: 10px; --bm-gap: 11px; }
+.brandmark.md { --bm-logo: 42px; --bm-word: 22px; --bm-by: 9.5px; --bm-gap: 10px; }
+.brandmark.sm { --bm-logo: 30px; --bm-word: 17px; --bm-by: 9px; --bm-gap: 8px; }
+.bm-logo { flex: none; width: var(--bm-logo); height: var(--bm-logo); border-radius: 22%; background: #fff; overflow: hidden; display: block; }
+.brandmark.dark .bm-logo { box-shadow: 0 0 0 1px rgba(255, 255, 255, .25); }
+.bm-logo img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.bm-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.wordmark { display: block; height: var(--bm-word); width: auto; max-width: 100%; overflow: visible; }
+.wm-ink { fill: var(--wm-ink); }
+.wm-accent { fill: var(--wm-accent); }
+.bm-by { font-size: var(--bm-by); line-height: 1.1; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--bm-by-color); white-space: nowrap; }
+
+/* sidebar and top bar (inside the app) */
+.side-brand { padding: .25rem .5rem 1rem; }
+.side-brand .biz { margin-top: .85rem; padding-top: .75rem; border-top: 1px solid rgba(255, 255, 255, .14); font-weight: 800; font-size: 1.05rem; line-height: 1.25; color: #fff; overflow-wrap: anywhere; }
+.topbar .bm-biz { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+
+/* other plain sign-in screens (setup notice, waiting, new password): the brand sits on top of the card */
+.auth .card > .brandmark { margin-bottom: .9rem; }
+
+/* ---- Sign in page: the form sits on the laptop screen in the photo ---- */
+.login-stage { position: relative; min-height: 100dvh; overflow: hidden; background: #d9c7ad; color: var(--ink); }
+/* The picture is scaled so the laptop screen is big (about 675px wide on most computers) and never smaller than ~480px; it is cropped from the sides, never squashed. */
+.login-scene { --W: max(100vw, calc(100dvh * 1.7902), min(2800px, calc(100dvh * 3.6))); position: absolute; bottom: 0; left: 50%; width: var(--W); margin-left: calc(var(--W) / -2); aspect-ratio: 1024 / 572; }
+.login-photo { position: absolute; inset: 0; background: url('/brand/login-photo.jpg') 0 0 / 100% 100% no-repeat; }
+.login-screen { position: absolute; left: 37.988%; top: 55.07%; width: 24.121%; height: 27.098%; overflow: hidden; }
+.login-screen::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(115deg, rgba(255, 255, 255, .18), transparent 40%); }
+.login-vs { position: absolute; left: 0; top: 0; width: 600px; height: 375px; transform-origin: 0 0; transform: scale(var(--s, 1)); display: grid; overflow-y: auto; scrollbar-width: none; background: linear-gradient(160deg, #f6fafd, #e1ecf5); }
+.login-vs::-webkit-scrollbar { display: none; }
+
+/* the sign-in card, designed 600px wide and scaled to the laptop screen */
+.lcard { width: 344px; margin: auto; background: #fff; border: 1px solid #e3ebf1; border-radius: 14px; padding: 16px 22px 14px; box-shadow: 0 8px 28px rgba(11, 42, 68, .14); }
+.lcard .lsub { margin: 8px 0 8px; font-size: 12.5px; line-height: 1.35; color: #5a7186; }
+.lcard .notice { padding: 6px 9px; margin: 0 0 8px; font-size: 12px; border-radius: 8px; }
+.lcard .field { gap: 3px; margin-bottom: 8px; }
+.lcard .field > label { font-size: 12px; }
+.lcard .field .hint { font-size: 11px; }
+.lcard .input { min-height: 36px; height: 36px; padding: 0 11px; font-size: 13.5px; border-radius: 8px; border-color: #c9d6e0; }
+.lcard .input:focus { outline: 3px solid rgba(15, 92, 138, .25); border-color: #0f5c8a; }
+.lcard .pwbox .input { padding-right: 54px; }
+.lcard .pwtoggle { min-height: 28px; min-width: 44px; padding: 0 8px; font-size: 12px; right: 4px; }
+.lcard .btn.block { min-height: 40px; border-radius: 8px; font-size: 14px; font-weight: 700; margin-top: 2px; }
+.lcard .lrow { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-top: 8px; }
+.lcard .lrow .btn.ghost.small { min-height: 28px; padding: 0 4px; font-size: 12px; }
+
+/* The short pitch beside the laptop. A soft, see-through dark wash sits behind it (the photo stays visible); the words themselves are fully solid.
+   Computers 1366px+ wide: to the right of the laptop. Tablets and small laptops: a bar at the bottom. Phones: under the sign-in card. */
+@font-face { font-family: "Lora Italic"; font-style: italic; font-weight: 400 700; font-display: swap; src: url('/brand/lora-italic.woff') format('woff'); }
+.login-info { --ivory: #fff7e8; --champagne: #ecd29f; position: fixed; z-index: 2; left: 50%; bottom: 14px; transform: translateX(-50%); width: min(720px, calc(100vw - 32px)); padding: 14px 22px 16px; border-radius: 18px; color: #fff; background: linear-gradient(150deg, rgba(8, 18, 30, .62), rgba(8, 18, 30, .5)); -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); box-shadow: 0 12px 34px rgba(5, 12, 22, .28); }
+.login-info h2 { margin: 0 0 8px; font-family: "Lora Italic", "Playfair Display", "Cormorant Garamond", Georgia, "Times New Roman", serif; font-style: italic; font-weight: 500; font-size: 28px; line-height: 1.12; letter-spacing: -.01em; color: var(--ivory); text-shadow: 0 1px 14px rgba(0, 0, 0, .45); text-wrap: balance; }
+.login-info h2 br { display: none; }
+.login-info h2 em { font-style: italic; font-weight: 600; color: var(--champagne); }
+.login-info h2::after { content: ""; display: block; width: 44px; height: 2px; margin-top: 10px; background: var(--champagne); opacity: .9; border-radius: 2px; }
+.login-info p { margin: 0; font-size: 13.5px; line-height: 1.6; font-weight: 400; letter-spacing: .005em; color: #fff; text-shadow: 0 1px 8px rgba(0, 0, 0, .4); text-wrap: pretty; }
+@media (min-width: 1366px) and (min-height: 481px) {
+  .login-info { position: absolute; z-index: 1; left: 64%; top: 55.07%; bottom: auto; transform: none; width: min(350px, calc(50vw - .14 * var(--W) - 20px)); padding: 24px 24px 26px; border-radius: 22px; }
+  .login-info h2 { font-size: 40px; line-height: 1.08; margin-bottom: 12px; }
+  .login-info h2 br { display: inline; }
+  .login-info h2::after { margin-top: 14px; width: 52px; }
+  .login-info p { font-size: 14.5px; line-height: 1.65; }
+}
+
+/* when the card gets taller (error message, create-account), tighten it so it still fits on the laptop screen */
+.lcard.compact { padding: 10px 20px 8px; }
+.lcard.compact .brandmark.lg { --bm-logo: 40px; --bm-word: 28px; }
+.lcard.compact .lsub { margin: 5px 0 5px; }
+.lcard.compact .field { margin-bottom: 5px; }
+.lcard.compact .input { min-height: 32px; height: 32px; }
+.lcard.compact .btn.block { min-height: 36px; }
+.lcard.compact .lrow { margin-top: 4px; }
+.lcard.compact .lrow .btn.ghost.small { min-height: 24px; }
+
+/* phones, and short landscape screens: a normal card over the (softly blurred) photo, with big comfortable boxes */
+@media (max-width: 700px), (max-height: 480px) {
+  .login-stage { display: grid; place-items: center; padding: 24px 16px; overflow: visible; }
+  .login-scene { display: contents; }
+  .login-photo { position: fixed; inset: -8px; background-size: cover; background-position: center bottom; filter: blur(2px); z-index: 0; }
+  .login-photo::after { content: ""; position: absolute; inset: 0; background: rgba(255, 255, 255, .35); }
+  .login-screen { position: relative; z-index: 1; left: auto; top: auto; width: 100%; max-width: 420px; height: auto; overflow: visible; }
+  .login-screen::after { display: none; }
+  .login-vs { position: static; transform: none; width: 100%; height: auto !important; display: block; overflow: visible; background: none; }
+  .lcard { width: 100%; padding: 24px 22px 20px; border-radius: 18px; background: rgba(255, 255, 255, .95); }
+  .brandmark.lg { --bm-logo: 52px; --bm-word: 33px; --bm-by: 10.5px; --bm-gap: 12px; }
+  .lcard .lsub { font-size: 14px; margin: 12px 0 10px; }
+  .lcard .notice { font-size: 14px; padding: 9px 11px; }
+  .lcard .field { gap: 5px; margin-bottom: 12px; }
+  .lcard .field > label { font-size: 14px; }
+  .lcard .field .hint { font-size: 12.5px; }
+  .lcard .input { min-height: 48px; height: 48px; font-size: 16px; }
+  .lcard .pwbox .input { padding-right: 66px; }
+  .lcard .pwtoggle { min-height: 40px; min-width: 52px; font-size: 14px; }
+  .lcard .btn.block { min-height: 50px; font-size: 16px; margin-top: 4px; }
+  .lcard .lrow { margin-top: 12px; }
+  .lcard .lrow .btn.ghost.small { min-height: 40px; font-size: 14px; padding: 0 6px; }
+  .login-info { position: relative; z-index: 1; left: auto; top: auto; bottom: auto; transform: none; width: 100%; max-width: 420px; margin-top: 16px; padding: 22px 22px 24px; border-radius: 20px; background: linear-gradient(150deg, rgba(8, 18, 30, .74), rgba(8, 18, 30, .66)); }
+  .login-info h2 { font-size: 34px; line-height: 1.1; margin-bottom: 12px; }
+  .login-info h2 br { display: inline; }
+  .login-info p { font-size: 15px; line-height: 1.65; }
+  .lcard.compact { padding: 24px 22px 20px; }
+  .lcard.compact .brandmark.lg { --bm-logo: 52px; --bm-word: 33px; }
+  .lcard.compact .lsub { margin: 12px 0 10px; }
+  .lcard.compact .field { margin-bottom: 12px; }
+  .lcard.compact .input { min-height: 48px; height: 48px; }
+  .lcard.compact .btn.block { min-height: 50px; }
+  .lcard.compact .lrow { margin-top: 12px; }
+  .lcard.compact .lrow .btn.ghost.small { min-height: 40px; }
+}
+@media (max-width: 860px) { .topbar .btn { flex: none; white-space: nowrap; } .topbar .brandmark { flex: none; } }

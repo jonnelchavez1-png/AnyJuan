@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { repo } from '../data/repo.js';
 import { Field, PasswordInput } from '../ui/kit.jsx';
 import { checkPassword } from '../lib/password.js';
 import { config } from '../config.js';
+import { Brand } from '../ui/Brand.jsx';
 
 export function SetupNeeded({ problem }) {
   return (
     <div className="auth"><div className="card stack">
-      <h1>AnyJuanPOS</h1>
+      <Brand size="md" />
       <div className="notice bad" role="alert">{problem}</div>
       <p>To fix this, add these two settings where the app is hosted (for Netlify: Site configuration → Environment variables), then publish again:</p>
       <pre style={{ whiteSpace: 'pre-wrap', background: '#edf4f9', padding: '.6rem', borderRadius: 8 }}>
@@ -49,23 +50,55 @@ export function Login() {
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
 
+  // The form lives on the laptop screen in the photo. It is designed 600px wide and scaled to whatever size that screen has on this device.
+  const screenRef = useRef(null);
+  const vsRef = useRef(null);
+  useEffect(() => {
+    const screen = screenRef.current; const vs = vsRef.current;
+    if (!screen || !vs) return undefined;
+    const fit = () => {
+      if (getComputedStyle(vs).position === 'absolute') {
+        const s = screen.clientWidth / 600;
+        vs.style.setProperty('--s', s);
+        vs.style.height = `${screen.clientHeight / s}px`;
+      } else { vs.style.removeProperty('--s'); vs.style.height = ''; }
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(fit) : null;
+    ro?.observe(screen);
+    return () => { window.removeEventListener('resize', fit); ro?.disconnect(); };
+  }, []);
+
   return (
-    <div className="auth">
-      <form className="card stack" onSubmit={submit} aria-labelledby="login-title">
-        <div><h1 id="login-title">AnyJuanPOS</h1><p className="muted">{mode === 'in' ? 'Sign in to your business. Accounts are created by the owner.' : mode === 'up' ? 'Create an account' : 'Reset your password'}</p></div>
-        {info && <div className="notice good" role="status">{info}</div>}
-        {error && <div className="notice bad" role="alert">{error}</div>}
-        {mode === 'up' && <Field label="Your name" id="name"><input id="name" className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required /></Field>}
-        <Field label="Email" id="email"><input id="email" className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required /></Field>
-        {mode !== 'reset' && <Field label="Password" id="password" hint={mode === 'up' ? 'At least 8 characters.' : undefined}>
-          <PasswordInput id="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'in' ? 'current-password' : 'new-password'} required />
-        </Field>}
-        <button className="btn block" disabled={busy}>{busy ? 'Please wait…' : mode === 'in' ? 'Sign in' : mode === 'up' ? 'Create account' : 'Send reset link'}</button>
-        <div className="row between small">
-          {mode === 'in' ? <button type="button" className="btn ghost small" onClick={() => { setMode('reset'); setError(''); }}>Forgot password?</button> : <button type="button" className="btn ghost small" onClick={() => { setMode('in'); setError(''); }}>Back to sign in</button>}
-          {mode === 'in' && config.allowSignup && <button type="button" className="btn ghost small" onClick={() => { setMode('up'); setError(''); }}>New staff account</button>}
-        </div>
-      </form>
+    <div className="login-stage">
+      <div className="login-scene">
+        <div className="login-photo" role="presentation" />
+        <main className="login-screen" ref={screenRef}>
+          <div className="login-vs" ref={vsRef}>
+            <form className={`lcard${mode !== 'in' || error || info ? ' compact' : ''}`} onSubmit={submit} aria-label="Sign in">
+              <Brand size="lg" as="h1" />
+              <p className="lsub">{mode === 'in' ? 'Sign in to your business. Accounts are created by the owner.' : mode === 'up' ? 'Create an account' : 'Reset your password'}</p>
+              {info && <div className="notice good" role="status">{info}</div>}
+              {error && <div className="notice bad" role="alert">{error}</div>}
+              {mode === 'up' && <Field label="Your name" id="name"><input id="name" className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required /></Field>}
+              <Field label="Email" id="email"><input id="email" className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required /></Field>
+              {mode !== 'reset' && <Field label="Password" id="password" hint={mode === 'up' ? 'At least 8 characters.' : undefined}>
+                <PasswordInput id="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'in' ? 'current-password' : 'new-password'} required />
+              </Field>}
+              <button className="btn block" disabled={busy}>{busy ? 'Please wait…' : mode === 'in' ? 'Sign in' : mode === 'up' ? 'Create account' : 'Send reset link'}</button>
+              <div className="lrow">
+                {mode === 'in' ? <button type="button" className="btn ghost small" onClick={() => { setMode('reset'); setError(''); }}>Forgot password?</button> : <button type="button" className="btn ghost small" onClick={() => { setMode('in'); setError(''); }}>Back to sign in</button>}
+                {mode === 'in' && config.allowSignup && <button type="button" className="btn ghost small" onClick={() => { setMode('up'); setError(''); }}>New staff account</button>}
+              </div>
+            </form>
+          </div>
+        </main>
+        <aside className="login-info" aria-label="About AnyJuanPOS">
+          <h2>Your business,<br />{' '}made <em>simpler.</em></h2>
+          <p>Manage sales, expenses, and inventory with ease. Track discounts, taxes, and daily cash flow while keeping everything organized and documented. Your business keeps moving, even offline — all in one place.</p>
+        </aside>
+      </div>
     </div>
   );
 }
@@ -73,6 +106,7 @@ export function Login() {
 export function Waiting({ email, onCheck, onSignOut, checking }) {
   return (
     <div className="auth"><div className="card stack">
+      <Brand size="md" />
       <h1>Waiting for approval</h1>
       <p>You are signed in as <strong>{email}</strong>, but the owner has not switched your account on yet.</p>
       <p className="muted">Ask the owner to open <em>Team</em> and activate you, then press the button below.</p>
@@ -98,6 +132,7 @@ export function SetNewPassword({ onDone, onSignOut }) {
   };
   return (
     <div className="auth"><form className="card stack" onSubmit={save}>
+      <Brand size="md" />
       <h1>Choose a new password</h1>
       <p className="muted">Pick a password only you know. At least 8 characters, with letters.</p>
       {error && <div className="notice bad" role="alert">{error}</div>}

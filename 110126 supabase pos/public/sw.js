@@ -2,7 +2,7 @@
    It never touches Supabase (other website): sales and reports are handled by the app itself.
    Strategy: page = network first (so updates arrive), falling back to the saved copy; /assets (named by content) = saved copy first. */
 const CACHE = 'pos-shell-v1';
-const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/favicon.svg'];
+const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/favicon.svg', '/brand/aj-logo.png', '/brand/login-photo.jpg', '/brand/lora-italic.woff'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
