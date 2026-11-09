@@ -7,7 +7,7 @@ import { config } from '../config.js';
 export function SetupNeeded({ problem }) {
   return (
     <div className="auth"><div className="card stack">
-      <h1>Retailer POS</h1>
+      <h1>AnyJuanPOS</h1>
       <div className="notice bad" role="alert">{problem}</div>
       <p>To fix this, add these two settings where the app is hosted (for Netlify: Site configuration → Environment variables), then publish again:</p>
       <pre style={{ whiteSpace: 'pre-wrap', background: '#edf4f9', padding: '.6rem', borderRadius: 8 }}>
@@ -52,7 +52,7 @@ export function Login() {
   return (
     <div className="auth">
       <form className="card stack" onSubmit={submit} aria-labelledby="login-title">
-        <div><h1 id="login-title">Retailer POS</h1><p className="muted">{mode === 'in' ? 'Sign in to your business. Accounts are created by the owner.' : mode === 'up' ? 'Create an account' : 'Reset your password'}</p></div>
+        <div><h1 id="login-title">AnyJuanPOS</h1><p className="muted">{mode === 'in' ? 'Sign in to your business. Accounts are created by the owner.' : mode === 'up' ? 'Create an account' : 'Reset your password'}</p></div>
         {info && <div className="notice good" role="status">{info}</div>}
         {error && <div className="notice bad" role="alert">{error}</div>}
         {mode === 'up' && <Field label="Your name" id="name"><input id="name" className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required /></Field>}

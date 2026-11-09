@@ -1,4 +1,4 @@
-# Retailer POS v3
+# AnyJuanPOS v3
 
 A point of sale, stock and money tracker for **one business** (any kind of shop or service). It runs in the browser on a phone, tablet or computer, and keeps its data in your own Supabase project. Online only today, built so offline mode can be added later without rewriting the screens.
 

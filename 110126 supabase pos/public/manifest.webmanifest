@@ -1,6 +1,6 @@
 {
-  "name": "Retailer POS",
-  "short_name": "POS",
+  "name": "AnyJuanPOS",
+  "short_name": "AnyJuanPOS",
   "description": "Point of sale, stock and money tracker",
   "start_url": "/",
   "scope": "/",

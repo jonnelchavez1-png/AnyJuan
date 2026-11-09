@@ -164,7 +164,7 @@ function Shell({ user, profile }) {
 
   useEffect(() => { setMenuOpen(false); }, [hash]);
   useEffect(() => {
-    document.title = base ? `${route?.label || 'App'} · ${base.business.name}` : 'Retailer POS';
+    document.title = base ? `${route?.label || 'App'} · ${base.business.name}` : 'AnyJuanPOS';
   }, [route, base]);
 
   const business = base?.business;
@@ -187,7 +187,7 @@ function Shell({ user, profile }) {
           <strong>{business.name}</strong>
         </header>
         <aside id="sidebar" className={`sidebar ${menuOpen ? 'open' : ''}`}>
-          <div className="brand">{business.name}<small>Retailer POS</small></div>
+          <div className="brand">{business.name}<small>AnyJuanPOS</small></div>
           <nav className="nav" aria-label="Main">
             {allowed.map((r) => (
               <a key={r.path} href={`#/${r.path}`} aria-current={r === route ? 'page' : undefined}><span aria-hidden="true">{r.icon}</span>{r.label}</a>
