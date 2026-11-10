@@ -10,12 +10,20 @@ export default function Products() {
   const [showOff, setShowOff] = useState(false);
   const [edit, setEdit] = useState(null); // product | {} (new)
   const [adjust, setAdjust] = useState(null);
+  const [sel, setSel] = useState(() => new Set()); // ticked products
+  const [confirm, setConfirm] = useState(null); // 'off' | 'on'
   const catName = (id) => categories.find((c) => c.id === id)?.name || '–';
   const rows = useMemo(() => products.filter((p) => (showOff || p.active)
     && (!q.trim() || [p.name, p.sku, p.barcode].some((v) => (v || '').toLowerCase().includes(q.trim().toLowerCase())))), [products, q, showOff]);
   const low = (p) => p.active && p.track_stock && Number(p.reorder_level) > 0 && Number(p.quantity) <= Number(p.reorder_level);
   const stockValue = products.filter((p) => p.active && p.track_stock).reduce((n, p) => n + Math.round(Number(p.quantity) * toCents(p.cost_price)), 0);
   const edits = can('editProducts');
+  const toggle = (id) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const allShown = rows.length > 0 && rows.every((p) => sel.has(p.id));
+  const toggleAll = () => setSel(allShown ? new Set() : new Set(rows.map((p) => p.id)));
+  const chosen = products.filter((p) => sel.has(p.id));
+  const offCount = chosen.filter((p) => p.active).length;
+  const onCount = chosen.length - offCount;
 
   return (
     <>
@@ -25,15 +33,23 @@ export default function Products() {
         {edits && <button className="btn" onClick={() => setEdit({})}>＋ Add product</button>}
       </PageHead>
       <div className="row" style={{ marginBottom: '.75rem' }}>
-        <input className="input" style={{ maxWidth: 300 }} type="search" aria-label="Search products" placeholder="Name, SKU or barcode" value={q} onChange={(e) => setQ(e.target.value)} />
-        <label className="check"><input type="checkbox" checked={showOff} onChange={(e) => setShowOff(e.target.checked)} />Show switched-off</label>
+        <input className="input" style={{ maxWidth: 300 }} type="search" aria-label="Search products" placeholder="Name, SKU or barcode" value={q} onChange={(e) => { setQ(e.target.value); setSel(new Set()); }} />
+        <label className="check"><input type="checkbox" checked={showOff} onChange={(e) => { setShowOff(e.target.checked); setSel(new Set()); }} />Show switched-off</label>
         {edits && <span className="muted small num">Stock value at cost: {money(stockValue)}</span>}
       </div>
+      {edits && !sel.size && products.some((p) => p.active) && <p className="muted small" style={{ margin: '0 0 .75rem' }}>Starting your own list? Tick the box at the top of the table to select everything shown, then press Switch off. Nothing is deleted, so your sales history and reports stay correct, and you can switch products back on any time.</p>}
+      {edits && sel.size > 0 && <div className="card bulkbar" role="region" aria-label="Selected products">
+        <strong>{sel.size} selected</strong>
+        <button className="btn secondary small" disabled={!offCount} onClick={() => setConfirm('off')}>Switch off{offCount ? ` (${offCount})` : ''}</button>
+        <button className="btn secondary small" disabled={!onCount} onClick={() => setConfirm('on')}>Switch on{onCount ? ` (${onCount})` : ''}</button>
+        <button className="btn ghost small" onClick={() => setSel(new Set())}>Clear selection</button>
+      </div>}
       {!rows.length ? <div className="card empty">{products.length ? 'No products match.' : 'No products yet. Add your first product.'}</div> : (
         <div className="card table-wrap"><table>
-          <thead><tr><th>Product</th><th>Category</th><th className="right">Price</th>{edits && <th className="right">Cost</th>}<th className="right">Stock</th><th></th></tr></thead>
+          <thead><tr>{edits && <th className="pick"><input type="checkbox" aria-label="Select all products shown" checked={allShown} onChange={toggleAll} /></th>}<th>Product</th><th>Category</th><th className="right">Price</th>{edits && <th className="right">Cost</th>}<th className="right">Stock</th><th></th></tr></thead>
           <tbody>{rows.map((p) => (
             <tr key={p.id} className={p.active ? '' : 'dim'}>
+              {edits && <td className="pick"><input type="checkbox" aria-label={`Select ${p.name}`} checked={sel.has(p.id)} onChange={() => toggle(p.id)} /></td>}
               <td><strong>{p.name}</strong><div className="small muted">{[p.sku, p.barcode].filter(Boolean).join(' · ')}{p.tax_exempt ? ' · tax exempt' : ''}</div></td>
               <td>{catName(p.category_id)}</td>
               <td className="right num">{money(toCents(p.price))}</td>
@@ -47,9 +63,34 @@ export default function Products() {
             </tr>))}</tbody>
         </table></div>
       )}
+      {confirm && <BulkDialog mode={confirm} count={confirm === 'off' ? offCount : onCount}
+        ids={chosen.filter((p) => (confirm === 'off' ? p.active : !p.active)).map((p) => p.id)}
+        onClose={() => setConfirm(null)} onDone={() => { setConfirm(null); setSel(new Set()); reload(); }} />}
       {edit && <ProductDialog product={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload(); }} />}
       {adjust && <StockDialog product={adjust} onClose={() => setAdjust(null)} onSaved={() => { setAdjust(null); reload(); }} />}
     </>
+  );
+}
+
+function BulkDialog({ mode, count, ids, onClose, onDone }) {
+  const { toast } = useApp();
+  const off = mode === 'off';
+  const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  const go = async () => {
+    setBusy(true); setError('');
+    try {
+      await repo.setProductsActive(ids, !off);
+      toast(`${count} product${count === 1 ? '' : 's'} switched ${off ? 'off' : 'on'}`, 'good'); onDone();
+    } catch (e) { setError(e.message); setBusy(false); }
+  };
+  return (
+    <Dialog title={off ? `Switch off ${count} product${count === 1 ? '' : 's'}?` : `Switch on ${count} product${count === 1 ? '' : 's'}?`} onClose={onClose}
+      actions={<><button className="btn secondary" onClick={onClose}>Cancel</button><button className="btn" onClick={go} disabled={busy}>{busy ? 'Working…' : off ? 'Switch off' : 'Switch on'}</button></>}>
+      {off
+        ? <p>They will disappear from the Sell screen. Nothing is deleted: your past sales, stock counts and reports stay exactly as they are, and you can switch products back on any time (tick “Show switched-off”).</p>
+        : <p>They will appear on the Sell screen again, with the price and stock they had.</p>}
+      <ErrorBox error={error} />
+    </Dialog>
   );
 }
 

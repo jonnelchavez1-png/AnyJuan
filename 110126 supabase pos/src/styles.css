@@ -330,3 +330,8 @@ input::-ms-reveal, input::-ms-clear { display: none; }
   .lcard.compact .lrow .btn.ghost.small { min-height: 40px; }
 }
 @media (max-width: 860px) { .topbar .btn { flex: none; white-space: nowrap; } .topbar .brandmark { flex: none; } }
+
+/* products: tick boxes and the bar for switching many on/off at once */
+.bulkbar { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: .6rem .9rem; margin-bottom: .75rem; }
+th.pick, td.pick { width: 2.4rem; padding-right: 0; }
+th.pick input, td.pick input { width: 1.15rem; height: 1.15rem; cursor: pointer; }

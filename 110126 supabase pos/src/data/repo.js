@@ -115,6 +115,13 @@ export const repo = {
     const rows = await offline.cachedRead('products', () => run(sb().from('products').select('*').order('name')));
     return offline.applyPendingStock(rows || []);
   },
+  /** Switch many products on or off at once. Nothing is deleted: sales history, stock and reports stay exactly as they were. */
+  async setProductsActive(ids, active) {
+    for (let i = 0; i < ids.length; i += 100) {
+      await run(sb().from('products').update({ active }).in('id', ids.slice(i, i + 100)).select('id'));
+    }
+    return ids.length;
+  },
   /** Stock is never written here: it changes only through createSale, voidSale and adjustStock. */
   async saveProduct(row) {
     const { id, quantity, ...fields } = row;

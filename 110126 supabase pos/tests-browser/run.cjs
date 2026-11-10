@@ -18,12 +18,15 @@ const check = (name, ok, detail = '') => { if (ok) { passed++; console.log('  ok
   const page = await ctx.newPage(); const errors = [];
   page.on('pageerror', (e) => errors.push(String(e))); page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   const db = () => page.evaluate(() => JSON.parse(JSON.stringify(window.__fake.db)));
-  const login = async (email) => { await page.getByLabel('Email').fill(email); await page.getByLabel('Password').fill('correct-horse'); await page.getByRole('button', { name: 'Sign in' }).click(); };
+  const login = async (email) => { await page.getByLabel('Email').fill(email); await page.getByLabel('Password', { exact: true }).fill('correct-horse'); await page.getByRole('button', { name: 'Sign in' }).click(); };
 
   console.log('Sign in');
   await page.goto(base);
   await page.getByLabel('Email').waitFor();
-  await page.getByLabel('Email').fill('owner@example.com'); await page.getByLabel('Password').fill('wrong'); await page.getByRole('button', { name: 'Sign in' }).click();
+  { const pw = page.getByLabel('Password', { exact: true }); await pw.fill('typed-by-me'); check('the password is hidden by default', (await pw.getAttribute('type')) === 'password');
+    await page.getByRole('button', { name: 'Show password' }).click(); check('"Show" reveals what was typed', (await pw.getAttribute('type')) === 'text' && (await pw.inputValue()).length > 0);
+    await page.getByRole('button', { name: 'Hide password' }).click(); check('"Hide" covers it again', (await pw.getAttribute('type')) === 'password'); }
+  await page.getByLabel('Email').fill('owner@example.com'); await page.getByLabel('Password', { exact: true }).fill('wrong'); await page.getByRole('button', { name: 'Sign in' }).click();
   check('wrong password shows an error', await page.getByRole('alert').filter({ hasText: 'Invalid login' }).isVisible());
   await login('owner@example.com');
   await page.getByRole('heading', { name: 'Dashboard' }).waitFor();
@@ -37,9 +40,14 @@ const check = (name, ok, detail = '') => { if (ok) { passed++; console.log('  ok
   await page.getByLabel('Rate %').fill('12');
   await page.getByRole('button', { name: 'Save tax settings' }).click();
   await page.getByText('Saved').first().waitFor();
+  await page.getByRole('button', { name: 'Print test receipt' }).click();
+  await page.waitForFunction(() => document.querySelector('iframe'));
+  const testPrint = await page.evaluate(() => { const f = document.querySelector('iframe'); return f.contentDocument.body.innerText + ' | ' + f.contentDocument.getElementById('paper').textContent; });
+  check('Settings can print a test receipt on the chosen paper (80 mm roll by default)', /TEST RECEIPT/.test(testPrint) && /size: 80mm \d+mm/.test(testPrint), testPrint.slice(0, 300));
+  await page.waitForTimeout(2300);
   let d = await db(); check('tax saved as 12% inclusive', d.businesses[0].tax_enabled && d.businesses[0].tax_rate === 12 && d.businesses[0].tax_mode === 'inclusive');
 
-  console.log('Selling (with a dropped connection)');
+  console.log('Selling');
   await page.getByRole('link', { name: 'Sell' }).click();
   const tile = (n) => page.locator('button.tile', { hasText: n });
   await tile('Cola 290ml').click(); await tile('Cola 290ml').click();
@@ -49,21 +57,44 @@ const check = (name, ok, detail = '') => { if (ok) { passed++; console.log('  ok
   check('screen shows total ₱225.00 (inclusive 12%, 10% discount, exempt item)', /Total\s*₱225\.00/.test(totalsText.replace(/\n/g, '')), totalsText);
   check('screen shows tax ₱19.29', totalsText.includes('19.29'), totalsText);
   await page.screenshot({ path: path.join(shots, 'sell-desktop.png') });
-  await page.evaluate(() => { window.__fakeFail = { createSale: 1 }; });
-  await page.getByRole('button', { name: /Charge/ }).click();
-  await page.getByText('Cannot reach the server').waitFor();
-  check('dropped connection gives a plain message and keeps the cart', await page.getByText('Cola 290ml').count() > 0);
-  d = await db(); check('nothing recorded yet', d.sales.length === 0);
+  check('cash box appears when paying by Cash', await page.getByLabel('Cash received').isVisible());
+  await page.getByLabel('Method').selectOption({ label: 'E-wallet' });
+  check('cash box is hidden for other methods', await page.getByLabel('Cash received').count() === 0);
+  await page.getByLabel('Method').selectOption({ label: 'Cash' });
+  await page.getByLabel('Cash received').fill('100'); await page.getByRole('button', { name: /Charge/ }).click();
+  check('cash less than the total is refused', await page.getByText('is less than the amount to pay').isVisible());
+  d = await db(); check('nothing recorded for short cash', d.sales.length === 0);
+  await page.getByRole('button', { name: 'Exact ₱225.00' }).waitFor();
+  await page.getByLabel('Cash received').fill('300');
+  check('change shows ₱75.00 for ₱300 received on ₱225.00', (await page.locator('.change').innerText()).includes('75.00'));
+  await page.screenshot({ path: path.join(shots, 'sell-cash-change.png') });
+  // (a dropped connection is now handled by saving the sale on the device: see tests-browser/offline.cjs)
   await page.getByRole('button', { name: /Charge/ }).click();
   await page.getByRole('dialog', { name: 'Receipt' }).waitFor();
   d = await db();
-  check('retry recorded the sale exactly once', d.sales.length === 1);
+  check('the sale was recorded exactly once', d.sales.length === 1);
+  check('the sale was filed under the In-store channel without anyone choosing it', d.sales[0].channel_id === d.sales_channels.find((c) => c.name === 'In-store').id, String(d.sales[0].channel_id));
   check('stock fell by what was sold (Cola 10→8)', d.products.find((p) => p.name === 'Cola 290ml').quantity === 8);
   check('server totals match', d.sales[0].total === 225 && d.sales[0].tax_amount === 19.29 && d.sales[0].net_sales === 205.71, JSON.stringify(d.sales[0]));
   const rtext = await page.locator('#receipt').innerText();
   check('receipt shows invoice, tax line, total, payment', /INV-000001/.test(rtext) && /Tax 12%\s*\(included\)/.test(rtext) && rtext.includes('₱225.00') && /Paid/.test(rtext), rtext);
+  await page.getByRole('button', { name: 'Print receipt' }).click();
+  await page.waitForFunction(() => document.querySelector('iframe'));
+  const printed = await page.evaluate(() => document.querySelector('iframe').contentDocument.body.innerText);
+  check('print sends only the receipt (invoice, items, change)', /INV-/.test(printed) && /Change/.test(printed) && !/Search or scan/.test(printed) && !/Current sale/.test(printed), printed.slice(0, 200));
+  check('paper size choice is offered', await page.getByLabel('Paper size').isVisible());
+  check('receipt shows cash received and change', /Cash received\s*₱300\.00/.test(rtext) && /Change\s*₱75\.00/.test(rtext), rtext);
   await page.screenshot({ path: path.join(shots, 'receipt-desktop.png') });
   await page.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('link', { name: 'Sales', exact: true }).click(); await page.getByRole('heading', { name: 'Sales' }).first().waitFor();
+  await page.evaluate(() => { const d = window.__fake.db; const base = d.sales[0]; d.sales.push({ ...base, id: 'other-device-sale', invoice_number: 'INV-OTHER1', created_at: new Date().toISOString(), occurred_at: new Date().toISOString() }); });
+  await page.waitForTimeout(5500); // (the app never re-reads more than once every 5 seconds)
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  { let seen = false; for (let i = 0; i < 40 && !seen; i++) { seen = (await page.getByText('INV-OTHER1').count()) > 0; if (!seen) await page.waitForTimeout(200); }
+    check('a sale made on ANOTHER device appears by itself when the window is looked at again (no reload)', seen); }
+  await page.evaluate(() => { window.__fake.db.sales = window.__fake.db.sales.filter((x) => x.id !== 'other-device-sale'); });
+  await page.getByRole('link', { name: 'Sell', exact: true }).click();
+
 
   console.log('Pay later and stock limits');
   await tile('Rice 1kg').click();
@@ -80,7 +111,7 @@ const check = (name, ok, detail = '') => { if (ok) { passed++; console.log('  ok
 
   console.log('Sales history');
   await page.getByRole('link', { name: 'Sales' }).click();
-  await page.getByRole('button', { name: 'INV-000002' }).click();
+  await page.getByRole('button', { name: 'INV-000002', exact: true }).click();
   await page.getByRole('button', { name: 'Record payment' }).click();
   await page.getByLabel('Amount').fill('1000');
   await page.getByRole('button', { name: 'Save payment' }).click();
@@ -89,8 +120,8 @@ const check = (name, ok, detail = '') => { if (ok) { passed++; console.log('  ok
   await page.getByRole('button', { name: 'Save payment' }).click();
   await page.getByText('Payment recorded').first().waitFor();
   d = await db(); check('part payment recorded', d.payments.filter((p) => p.sale_id === d.sales[1].id).reduce((n, p) => n + p.amount, 0) === 50);
-  await page.getByRole('button', { name: 'INV-000001' }).click();
-  await page.getByRole('button', { name: 'Void' }).click();
+  check('every completed sale row has a visible Void button for the owner', await page.getByRole('button', { name: /^Void INV-/ }).count() >= 1);
+  await page.getByRole('button', { name: 'Void INV-000001' }).click();
   await page.getByRole('button', { name: 'Void sale' }).click();
   check('void needs a reason', await page.getByText('Please write a reason').isVisible());
   await page.getByLabel('Reason').fill('test');
@@ -114,6 +145,22 @@ const check = (name, ok, detail = '') => { if (ok) { passed++; console.log('  ok
   await page.getByLabel('Change (+ add, − remove)').fill('5'); await page.getByLabel('Reason').fill('delivery'); await page.getByRole('button', { name: 'Save change' }).click();
   await page.getByText('Stock updated').first().waitFor();
   await page.screenshot({ path: path.join(shots, 'products-desktop.png') });
+  // switch many products off / on at once (nothing is deleted)
+  d = await db(); const nBefore = d.products.length; const stockBefore = d.products.find((p) => p.name === 'Soap').quantity;
+  await page.getByLabel('Search products').fill('Soap');
+  await page.getByLabel('Select all products shown').check();
+  check('bulk bar shows what is selected', await page.getByText('1 selected').isVisible());
+  await page.getByRole('button', { name: /^Switch off \(1\)/ }).click();
+  check('switch off asks first and says nothing is deleted', await page.getByText('Nothing is deleted').first().isVisible());
+  await page.getByRole('button', { name: 'Switch off', exact: true }).click();
+  await page.getByText('1 product switched off').first().waitFor();
+  d = await db(); check('only the ticked product is off, nothing deleted, stock kept', d.products.length === nBefore && d.products.filter((p) => !p.active).length === 1 && d.products.find((p) => p.name === 'Soap').active === false && d.products.find((p) => p.name === 'Soap').quantity === stockBefore);
+  await page.getByLabel('Search products').fill(''); await page.getByRole('checkbox', { name: 'Show switched-off' }).check();
+  await page.getByRole('checkbox', { name: 'Select Soap' }).check();
+  await page.getByRole('button', { name: /^Switch on \(1\)/ }).click(); await page.getByRole('button', { name: 'Switch on', exact: true }).click();
+  await page.getByText('1 product switched on').first().waitFor();
+  d = await db(); check('switched back on', d.products.every((p) => p.active));
+  await page.getByRole('checkbox', { name: 'Show switched-off' }).uncheck();
   await page.getByRole('link', { name: 'Expenses' }).click();
   await page.getByRole('button', { name: '＋ Add expense' }).click();
   await page.getByLabel('Amount').fill('300'); await page.getByLabel('Category').selectOption({ label: 'Rent' });
@@ -137,6 +184,168 @@ const check = (name, ok, detail = '') => { if (ok) { passed++; console.log('  ok
   check('custom range shows date pickers', await page.getByLabel('From', { exact: true }).isVisible());
   await page.getByRole('button', { name: 'This year' }).click(); await page.locator('.hero .big').waitFor();
   await page.screenshot({ path: path.join(shots, 'dashboard-desktop.png'), fullPage: true });
+
+  console.log('Tax report');
+  await page.getByRole('link', { name: 'Tax report' }).click();
+  await page.getByRole('heading', { name: 'Tax report', level: 1 }).waitFor();
+  await page.getByRole('button', { name: 'This year' }).click();
+  await page.locator('.kpi', { hasText: 'Tax collected' }).waitFor();
+  const liveSales = d.sales.filter((s) => s.status === 'completed'); const taxSum = liveSales.reduce((n, s) => n + s.tax_amount, 0);
+  const taxKpi = (await page.locator('.kpi', { hasText: 'Tax collected' }).innerText()).replace(/[^\d.]/g, '');
+  check(`tax report: tax collected equals the recorded tax (${taxKpi})`, taxKpi === taxSum.toFixed(2), `${taxKpi} vs ${taxSum}`);
+  check('tax report: total billed equals recorded totals', (await page.locator('.kpi', { hasText: 'Total billed' }).innerText()).replace(/[^\d.]/g, '').startsWith(liveSales.reduce((n, s) => n + s.total, 0).toFixed(2)));
+  check('tax report: voided sale is listed as left out', await page.getByText(/Left out: 1 voided sale/).isVisible());
+
+  console.log('Same dates and same numbers on every screen');
+  const val = (loc) => loc.first().locator('.value').innerText().then((t) => t.replace(/[^\d.]/g, ''));
+  await page.getByRole('link', { name: 'Dashboard' }).click();
+  await page.getByRole('button', { name: 'This month' }).click(); await page.locator('.hero .big').waitFor();
+  const note = await page.getByTestId('period-note').innerText();
+  check('dashboard says which days are shown ("this month so far")', /this month so far/.test(note), note);
+  check('dashboard comparison names the comparison days', /same days last month/.test(await page.locator('.hero .delta').innerText() + await page.locator('p.muted.small').last().innerText()));
+  await page.getByRole('button', { name: 'This year' }).click(); await page.locator('.hero .big').waitFor();
+  const dashFooter = await page.locator('p.muted.small').last().innerText();
+  check('dashboard footer says what is shown and what it is compared with', /Showing .*year so far/.test(dashFooter) && /Compared with the same days last year/.test(dashFooter), dashFooter);
+  check('dashboard no-comparison message says "for the same days last year"', /no sales were recorded for the same days last year/.test(await page.locator('.hero .delta').innerText()), await page.locator('.hero .delta').innerText());
+  const dTax = await val(page.locator('.kpi', { hasText: 'Tax collected' })); const dExp = await val(page.locator('.kpi', { hasText: 'Expenses' }));
+  await page.getByRole('link', { name: 'Sales' }).click(); await page.getByRole('heading', { name: 'Sales', level: 1 }).waitFor();
+  check('Sales opens on the same period (This year)', await page.getByRole('button', { name: 'This year' }).getAttribute('aria-pressed') === 'true');
+  check('Sales shows the same dates', (await page.getByTestId('period-note').innerText()) === note.replace('this month', 'this year').replace(/^.*$/s, (x) => x) || /year so far/.test(await page.getByTestId('period-note').innerText()));
+  await page.getByText(/sales · billed/).waitFor();
+  const sBilled = (await page.getByText(/sales · billed/).innerText()).match(/billed ₱([\d,.]+)/)[1].replace(/,/g, '');
+  await page.getByRole('link', { name: 'Tax report' }).click(); await page.locator('.kpi', { hasText: 'Tax collected' }).waitFor();
+  check('Tax report opens on the same period (This year)', await page.getByRole('button', { name: 'This year' }).getAttribute('aria-pressed') === 'true');
+  check('tax report "tax collected" equals the dashboard', (await val(page.locator('.kpi', { hasText: 'Tax collected' }))) === dTax, `${await val(page.locator('.kpi', { hasText: 'Tax collected' }))} vs ${dTax}`);
+  check('tax report "total billed" equals the Sales page billed', (await val(page.locator('.kpi', { hasText: 'Total billed' }))) === sBilled, `${await val(page.locator('.kpi', { hasText: 'Total billed' }))} vs ${sBilled}`);
+  await page.getByRole('link', { name: 'Expenses' }).click(); await page.getByText('Total spent').waitFor();
+  check('Expenses opens on the same period (This year)', await page.getByRole('button', { name: 'This year' }).getAttribute('aria-pressed') === 'true');
+  const eTotal = (await page.locator('.card', { hasText: 'Total spent' }).locator('.num').first().innerText()).replace(/[^\d.]/g, '');
+  check(`expenses page total equals the dashboard expenses (${eTotal})`, eTotal === dExp, `${eTotal} vs ${dExp}`);
+  await page.getByRole('button', { name: 'This month' }).click();
+  await page.getByRole('link', { name: 'Dashboard' }).click(); await page.locator('.hero .big').waitFor();
+  check('changing the period on one screen changes it everywhere', await page.getByRole('button', { name: 'This month' }).getAttribute('aria-pressed') === 'true');
+  await page.getByRole('button', { name: 'This year' }).click();
+
+  console.log('Returns and refunds');
+  await page.getByRole('link', { name: 'Sales' }).click(); await page.getByRole('heading', { name: 'Sales', level: 1 }).waitFor();
+  d = await db(); const before = d.sales.find((x) => x.invoice_number === 'INV-000002'); const riceStock0 = d.products.find((p) => p.name === 'Rice 1kg').quantity;
+  await page.getByRole('button', { name: 'Return items from INV-000002' }).click();
+  await page.getByRole('dialog', { name: /Return items/ }).waitFor();
+  await page.getByLabel('Return quantity for Rice 1kg').fill('1');
+  const sumText = await page.locator('.totals').innerText();
+  check('return shows the value of what comes back (₱55.00) before saving', sumText.includes('55.00'), sumText);
+  check('unpaid sale: nothing is handed back, the balance just drops', /Nothing to hand back/.test(sumText) && /drops to/.test(await page.locator('.dialog').innerText()));
+  await page.screenshot({ path: path.join(shots, 'return-dialog-desktop.png') });
+  await page.setViewportSize({ width: 390, height: 800 }); await page.waitForTimeout(150);
+  check('return window fits a phone screen', !(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)));
+  await page.screenshot({ path: path.join(shots, 'return-dialog-phone.png') });
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await page.getByRole('button', { name: 'Process return' }).click();
+  check('a reason is required', await page.getByText('Please write why the items are coming back').isVisible());
+  await page.getByLabel('Reason (required)').fill('Customer changed their mind');
+  await page.getByRole('button', { name: 'Process return' }).click();
+  await page.getByRole('dialog', { name: 'Return slip' }).waitFor();
+  const slip1 = await page.locator('#return-slip').innerText();
+  check('return slip shows number, sale and total', /RET-000001/.test(slip1) && /INV-000002/.test(slip1) && /TOTAL RETURNED\s*₱55\.00/.test(slip1) && /No money handed back/.test(slip1), slip1);
+  d = await db();
+  check('one return saved and the item is back in stock (+1)', d.returns.length === 1 && d.products.find((p) => p.name === 'Rice 1kg').quantity === riceStock0 + 1);
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.getByText('Part returned').first().waitFor();
+  check('Sales marks the sale "Part returned"', await page.getByText('Part returned').first().isVisible());
+  check('Returns in this period is listed', await page.getByRole('region', { name: 'Returns in this period' }).getByText('RET-000001').isVisible());
+  check('a sale with a return has no Void button', await page.getByRole('button', { name: 'Void INV-000002' }).count() === 0);
+  // second return: everything left, damaged (not back in stock) -> money goes back
+  await page.getByRole('button', { name: 'Return items from INV-000002' }).click();
+  await page.getByRole('dialog', { name: /Return items/ }).waitFor();
+  await page.getByRole('button', { name: 'Return everything that is left' }).click();
+  await page.getByLabel('Put Rice 1kg back in stock').uncheck();
+  const sum2 = await page.locator('.totals').innerText();
+  const paidSoFar = d.payments.filter((x) => x.sale_id === before.id).reduce((n, x) => n + x.amount, 0);
+  const owedNow = before.total - 55 - paidSoFar; // after returning everything the sale is worth 0
+  check('paid more than is now owed: the difference goes back', paidSoFar > 0 && new RegExp('Give back to the customer\\s*₱' + paidSoFar.toFixed(2).replace('.', '\\.')).test(sum2) , sum2);
+  check('refund method is offered', await page.getByLabel('Give the money back by').isVisible());
+  await page.getByLabel('Reason (required)').fill('Damaged');
+  await page.getByRole('button', { name: 'Process return' }).click();
+  await page.getByRole('dialog', { name: 'Return slip' }).waitFor();
+  const slip2 = await page.locator('#return-slip').innerText();
+  check('second slip shows the refund and "not put back in stock"', /REFUNDED/.test(slip2) && /not put back in stock/.test(slip2), slip2);
+  d = await db();
+  check('refund recorded, damaged goods did not go back on the shelf', d.returns.length === 2 && d.returns[1].refund_amount === paidSoFar && d.products.find((p) => p.name === 'Rice 1kg').quantity === riceStock0 + 1);
+  check('the sale now owes nothing and cannot be returned again', (() => { const o = d.sales.find((x) => x.id === before.id); return o && d.return_items.filter((i) => i.sale_item_id && d.sale_items.find((y) => y.id === i.sale_item_id && y.sale_id === before.id)).reduce((n, i) => n + i.quantity, 0) === 3; })());
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('region', { name: 'Returns in this period' }).getByText('RET-000002').waitFor();
+  check('Sales marks it "Returned"', await page.getByText('Returned', { exact: true }).first().isVisible());
+  check('no Return button once everything came back', await page.getByRole('button', { name: 'Return items from INV-000002' }).count() === 0);
+  const sumLine = await page.getByTestId('sales-summary').innerText();
+  check('Sales summary shows returned and net amounts', /returned ₱/.test(sumLine) && /net ₱/.test(sumLine), sumLine);
+  const sNet = sumLine.match(/net ₱([\d,.]+)/)[1].replace(/,/g, '');
+  const retTotal = d.returns.reduce((n, r) => n + r.total, 0);
+  await page.getByRole('link', { name: 'Dashboard' }).click(); await page.locator('.hero .big').waitFor();
+  check('dashboard Returns figure equals the returns recorded', (await val(page.locator('.kpi', { hasText: 'Returns' }).last())).startsWith(retTotal.toFixed(2)), await page.locator('.kpi', { hasText: 'Returns' }).last().innerText());
+  const net1 = d.sales.filter((x) => x.status === 'completed').reduce((n, x) => n + x.net_sales, 0) - d.returns.reduce((n, r) => n + r.net_amount, 0);
+  check('dashboard net sales is after returns', (await page.locator('.hero .big').innerText()).replace(/[^\d.]/g, '') === net1.toFixed(2), `${await page.locator('.hero .big').innerText()} vs ${net1}`);
+  const dTax2 = await val(page.locator('.kpi', { hasText: 'Tax collected' }));
+  await page.getByRole('link', { name: 'Tax report' }).click(); await page.locator('.kpi', { hasText: 'Tax collected' }).waitFor();
+  check('tax report tax equals the dashboard after returns', (await val(page.locator('.kpi', { hasText: 'Tax collected' }))) === dTax2, `${await val(page.locator('.kpi', { hasText: 'Tax collected' }))} vs ${dTax2}`);
+  check('tax report total billed equals Sales net after returns', (await val(page.locator('.kpi', { hasText: 'Total billed' }))) === sNet, `${await val(page.locator('.kpi', { hasText: 'Total billed' }))} vs ${sNet}`);
+  check('tax report says the returns are already taken off', await page.getByText(/Already taken off above: 2 returns/).isVisible());
+
+  console.log('Cash drawer');
+  await page.getByRole('link', { name: 'Sales' }).click(); await page.getByText(/sales · billed/).waitFor();
+  const salesBefore = await page.getByText(/sales · billed/).innerText();
+  await page.getByRole('link', { name: 'Dashboard' }).click(); await page.locator('.hero .big').waitFor();
+  const dashBefore = await page.locator('.hero .big').innerText(); const dbBefore = await db();
+  await page.getByRole('link', { name: 'Cash drawer' }).click(); await page.getByRole('heading', { name: 'Cash drawer', level: 1 }).waitFor();
+  check('drawer starts with "No shift is open"', await page.getByRole('heading', { name: 'No shift is open' }).isVisible());
+  await page.getByRole('button', { name: 'Open shift' }).first().click();
+  await page.getByRole('button', { name: 'Open shift' }).last().click();
+  check('opening cash must be typed', await page.getByRole('alert').filter({ hasText: 'Type the cash you are starting with' }).isVisible());
+  await page.getByLabel('Cash in the drawer right now').fill('500');
+  await page.getByRole('button', { name: 'Open shift' }).last().click();
+  await page.getByRole('heading', { name: /Shift open/ }).waitFor();
+  check('open shift shows the starting cash as expected', (await page.getByTestId('expected-cash').innerText()).replace(/[^\d.]/g, '') === '500.00');
+  // activity during the shift: 120 cash and 80 e-wallet received, 20 cash refunded
+  await page.evaluate(() => { const d = window.__fake.db; const now = new Date().toISOString(); const cash = d.payment_methods[0].id; const ew = d.payment_methods[1].id;
+    d.payments.push({ id: crypto.randomUUID(), sale_id: 'drawer-test-a', method_id: cash, amount: 120, paid_at: now }, { id: crypto.randomUUID(), sale_id: 'drawer-test-b', method_id: ew, amount: 80, paid_at: now });
+    d.returns.push({ id: crypto.randomUUID(), return_number: 'RET-DRAWER', sale_id: 'drawer-test-a', refund_amount: 20, refund_method_id: cash, total: 20, occurred_at: now, created_at: now }); });
+  await page.getByRole('button', { name: 'Refresh' }).click(); await page.waitForTimeout(150);
+  check('expected cash = 500 + 120 cash received - 20 cash refunded (e-wallet is not cash)', (await page.getByTestId('expected-cash').innerText()).replace(/[^\d.]/g, '') === '600.00', await page.getByTestId('expected-cash').innerText());
+  check('non-cash payments are listed but not counted', await page.getByText(/Not cash \(not in the drawer\): E-wallet/).isVisible());
+  await page.getByRole('button', { name: '－ Cash out' }).click();
+  await page.getByRole('button', { name: 'Save' }).click();
+  check('cash out needs an amount', await page.getByText('Enter an amount above zero').isVisible());
+  await page.getByLabel('Amount').fill('50'); await page.getByRole('button', { name: 'Save' }).click();
+  check('cash out needs a reason', await page.getByText('Please write what the cash was for').isVisible());
+  await page.getByLabel('What is it for?').fill('Paid the ice supplier'); await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByText('Paid the ice supplier').first().waitFor();
+  await page.getByRole('button', { name: '＋ Cash in' }).click(); await page.getByLabel('Amount').fill('10'); await page.getByLabel('What is it for?').fill('Change from the bank'); await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByText('Change from the bank').first().waitFor();
+  check('expected cash after cash out 50 and cash in 10 is 560.00', (await page.getByTestId('expected-cash').innerText()).replace(/[^\d.]/g, '') === '560.00', await page.getByTestId('expected-cash').innerText());
+  await page.screenshot({ path: path.join(shots, 'drawer-open-desktop.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 800 }); await page.waitForTimeout(150);
+  check('the open drawer fits a phone screen', !(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)));
+  await page.screenshot({ path: path.join(shots, 'drawer-open-phone.png'), fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await page.getByRole('button', { name: 'Close shift' }).first().click();
+  await page.getByLabel('Cash counted').fill('540');
+  check('closing shows "Short by" in words as you type', /Short by ₱20\.00/.test(await page.getByTestId('diff-text').innerText()));
+  await page.getByRole('button', { name: 'Close shift' }).last().click();
+  check('a difference needs a note', await page.getByText(/Please write a note that explains it/).first().isVisible());
+  await page.getByLabel(/Note/).fill('Gave change to a customer, forgot to write it');
+  await page.getByRole('button', { name: 'Close shift' }).last().click();
+  await page.getByRole('dialog', { name: 'Cash drawer report' }).waitFor();
+  const rep = await page.getByRole('dialog', { name: 'Cash drawer report' }).innerText();
+  check('report shows expected 560.00, counted 540.00 and Short by ₱20.00', /560\.00/.test(rep) && /540\.00/.test(rep) && /Short by ₱20\.00/.test(rep), rep);
+  await page.getByRole('button', { name: 'Close', exact: true }).last().click();
+  await page.getByRole('heading', { name: 'No shift is open' }).waitFor();
+  check('past shifts lists it with the result in words', await page.getByRole('row', { name: /SHIFT-00001/ }).getByText('Short by ₱20.00').isVisible());
+  const dAfter = await db();
+  check('the drawer changed no sale, payment or return', dAfter.sales.length === dbBefore.sales.length && dAfter.returns.length === dbBefore.returns.length + 1 && dAfter.payments.length === dbBefore.payments.length + 2 && JSON.stringify(dAfter.sales) === JSON.stringify(dbBefore.sales));
+  await page.evaluate(() => { const d = window.__fake.db; d.returns = d.returns.filter((r) => r.return_number !== 'RET-DRAWER'); d.payments = d.payments.filter((p) => !String(p.sale_id).startsWith('drawer-test-')); }); // remove the pretend refund and payments I injected, so only the drawer itself is measured
+  await page.getByRole('link', { name: 'Sales' }).click(); await page.getByText(/sales · billed/).waitFor();
+  check('Sales numbers are exactly the same after using the drawer', (await page.getByText(/sales · billed/).innerText()) === salesBefore);
+  await page.getByRole('link', { name: 'Dashboard' }).click(); await page.locator('.hero .big').waitFor();
+  check('Dashboard net sales is exactly the same after using the drawer', (await page.locator('.hero .big').innerText()) === dashBefore);
 
   console.log('Team and sign out');
   await page.getByRole('link', { name: 'Team' }).click();
@@ -165,7 +374,7 @@ const check = (name, ok, detail = '') => { if (ok) { passed++; console.log('  ok
   console.log('Every screen, phone and desktop');
   for (const [w, h, tag] of [[390, 800, 'phone'], [1280, 860, 'desktop']]) {
     await page.setViewportSize({ width: w, height: h });
-    for (const r of ['dashboard', 'sell', 'sales', 'products', 'expenses', 'settings', 'team']) {
+    for (const r of ['dashboard', 'sell', 'sales', 'drawer', 'tax', 'products', 'expenses', 'settings', 'team', 'account']) {
       await page.evaluate((x) => { location.hash = '#/' + x; }, r);
       await page.locator('h1').first().waitFor(); await page.waitForTimeout(250);
       const wide = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
@@ -175,18 +384,45 @@ const check = (name, ok, detail = '') => { if (ok) { passed++; console.log('  ok
   }
   await page.setViewportSize({ width: 1280, height: 860 });
 
+  console.log('Passwords');
+  await page.evaluate(() => { location.hash = '#/account'; });
+  await page.getByRole('heading', { name: 'My account' }).waitFor();
+  await page.getByLabel('New password', { exact: true }).fill('12345098'); await page.getByLabel('Type it again').fill('12345098');
+  await page.getByRole('button', { name: 'Save new password' }).click();
+  check('numbers-only password is refused with a reason', await page.getByText('only numbers').isVisible());
+  await page.getByLabel('New password', { exact: true }).fill('blue-Tiger-42-lamp'); await page.getByLabel('Type it again').fill('blue-Tiger-43-lamp');
+  await page.getByRole('button', { name: 'Save new password' }).click();
+  check('mismatched passwords are refused', await page.getByText('not the same').isVisible());
+  await page.getByLabel('Type it again').fill('blue-Tiger-42-lamp');
+  await page.getByRole('button', { name: 'Save new password' }).click();
+  await page.getByText('Password changed').first().waitFor();
+  check('password change reached the server', (await page.evaluate(() => window.__fake.passwords))['owner@example.com'] === 'blue-Tiger-42-lamp');
+  await page.getByRole('button', { name: 'Sign out' }).click(); await page.getByLabel('Email').waitFor();
+  await page.evaluate(() => window.__fake.triggerRecovery('new@example.com'));
+  await page.getByRole('heading', { name: 'Choose a new password' }).waitFor();
+  check('reset link opens the "choose a new password" screen', true);
+  await page.getByLabel('New password').fill('Sunrise7Market'); await page.getByLabel('Type it again').fill('Sunrise7Market');
+  await page.getByRole('button', { name: 'Save new password' }).click();
+  await page.getByRole('heading', { name: 'Waiting for approval' }).waitFor();
+  check('after choosing a new password the person continues (here: still waiting for approval)', (await page.evaluate(() => window.__fake.passwords))['new@example.com'] === 'Sunrise7Market');
+  await page.getByRole('button', { name: 'Sign out' }).click(); await page.getByLabel('Email').waitFor();
+
   console.log('Cashier role');
-  await page.getByRole('button', { name: 'Sign out' }).click().catch(async () => { await page.getByRole('button', { name: /Menu/ }).click(); await page.getByRole('button', { name: 'Sign out' }).click(); });
   await page.getByLabel('Email').waitFor();
   await login('cashier@example.com');
+  await page.evaluate(() => { location.hash = '#/sell'; });
   await page.getByRole('heading', { name: 'Sell' }).waitFor();
   const links = await page.locator('nav a').allInnerTexts();
-  check('cashier menu is only Sell, Sales, Products', links.map((t) => t.replace(/[^A-Za-z]/g, '')).join(',') === 'Sell,Sales,Products', links.join(','));
+  check('cashier menu is only Sell, Sales, Cash drawer, Offline and sync, Products, My account', links.map((t) => t.replace(/[^A-Za-z]/g, '')).join(',') === 'Sell,Sales,Cashdrawer,Offlineandsync,Products,Myaccount', links.join(','));
   await page.evaluate(() => { location.hash = '#/dashboard'; });
   await page.waitForTimeout(250);
   check('cashier cannot open the dashboard by typing the address', await page.getByRole('heading', { name: 'Dashboard' }).count() === 0);
   await page.evaluate(() => { location.hash = '#/products'; }); await page.getByRole('heading', { name: 'Products' }).waitFor();
+  await page.evaluate(() => { location.hash = '#/sales'; }); await page.getByRole('heading', { name: 'Sales', level: 1 }).waitFor(); await page.getByText(/sales · billed/).waitFor();
+  check('cashier sees no Return or Void buttons', await page.getByRole('button', { name: /^(Return items from|Void) / }).count() === 0);
+  await page.evaluate(() => { location.hash = '#/products'; }); await page.getByRole('heading', { name: 'Products' }).waitFor();
   check('cashier cannot add or edit products', await page.getByRole('button', { name: '＋ Add product' }).count() === 0 && await page.getByRole('button', { name: 'Edit' }).count() === 0);
+  check('cashier cannot tick or switch off products', await page.getByRole('checkbox', { name: 'Select all products shown' }).count() === 0);
   check('cashier does not see cost prices', await page.getByRole('columnheader', { name: 'Cost' }).count() === 0);
 
   check('no errors in the browser console', errors.length === 0, errors.join(' | '));
