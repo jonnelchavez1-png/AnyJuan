@@ -96,3 +96,84 @@ export function BarList({ rows, money, valueKey = 'value', format, empty = 'No d
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Donut chart for "how a total is split" (sales by category, channel, payment method, expenses by category).
+// It only DRAWS the rows it is given: every amount stays written out in the legend, so the donut is never the only
+// place a figure appears. Colours come in a fixed order (never cycled). A pie can't show negative amounts (for example a
+// category with more returns than sales), so those rows are listed under "View all as a table" instead of being drawn.
+// ---------------------------------------------------------------------------------------------------------------
+export const DONUT_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6'];
+const DONUT_OTHER = '#8a9aa8';
+const MAX_NAMED = DONUT_COLORS.length;
+
+export function formatShare(p) {
+  if (p >= 10) return `${Math.round(p)}%`;
+  if (p >= 0.1) return `${p.toFixed(1)}%`;
+  return '<0.1%';
+}
+
+function arcPath(cx, cy, R, r, a0, a1) {
+  const pt = (rad, a) => [cx + rad * Math.sin(a), cy - rad * Math.cos(a)];
+  const large = a1 - a0 > Math.PI ? 1 : 0;
+  const [x0, y0] = pt(R, a0), [x1, y1] = pt(R, a1), [x2, y2] = pt(r, a1), [x3, y3] = pt(r, a0);
+  return `M${x0},${y0} A${R},${R} 0 ${large} 1 ${x1},${y1} L${x2},${y2} A${r},${r} 0 ${large} 0 ${x3},${y3} Z`;
+}
+
+/** rows: [{name, value}] with value in cents. */
+export function DonutChart({ rows, money, ariaLabel, empty = 'No data for this period.' }) {
+  const [hover, setHover] = useState(null);
+  const model = useMemo(() => {
+    const positive = rows.filter((r) => r.value > 0).map((r, i) => ({ ...r, i })).sort((a, b) => b.value - a.value || a.i - b.i);
+    const positiveTotal = positive.reduce((s, r) => s + r.value, 0);
+    const grandTotal = rows.reduce((s, r) => s + r.value, 0);
+    let slices = positive.map((r, i) => ({ name: r.name, value: r.value, color: DONUT_COLORS[i] }));
+    const grouped = positive.length > MAX_NAMED + 1;
+    if (grouped) {
+      const rest = positive.slice(MAX_NAMED);
+      slices = [...slices.slice(0, MAX_NAMED), { name: `Other (${rest.length} more)`, value: rest.reduce((s, r) => s + r.value, 0), color: DONUT_OTHER }];
+    }
+    let acc = 0;
+    slices.forEach((s) => { s.share = (s.value / positiveTotal) * 100; s.from = (acc / positiveTotal) * 2 * Math.PI; acc += s.value; s.to = (acc / positiveTotal) * 2 * Math.PI; });
+    return { slices, positiveTotal, grandTotal, grouped, hasHidden: rows.length !== positive.length };
+  }, [rows]);
+  if (!model.slices.length) return <p className="muted">{empty}</p>;
+
+  const { slices, grandTotal } = model;
+  const C = 110, R = 102, r = 64;
+  const h = hover != null ? slices[hover] : null;
+  const centerAmount = money(h ? h.value : grandTotal);
+  const fs = centerAmount.length > 13 ? 12 : centerAmount.length > 10 ? 14 : 17;
+  const summary = `${ariaLabel}: ${slices.map((s) => `${s.name} ${money(s.value)} (${formatShare(s.share)})`).join(', ')}`;
+  return (
+    <div className="donut">
+      <svg className="donut-svg" viewBox="0 0 220 220" role="img" aria-label={summary} onPointerLeave={() => setHover(null)}>
+        {slices.length === 1
+          ? <circle cx={C} cy={C} r={(R + r) / 2} fill="none" stroke={slices[0].color} strokeWidth={R - r} onPointerEnter={() => setHover(0)} />
+          : slices.map((s, i) => (
+            <path key={s.name} d={arcPath(C, C, R, r, s.from, s.to)} fill={s.color} stroke="#fff" strokeWidth="2" strokeLinejoin="round"
+              opacity={hover == null || hover === i ? 1 : 0.4} onPointerEnter={() => setHover(i)} onPointerDown={() => setHover(i)} />))}
+        <text x={C} y={C - 6} textAnchor="middle" className="donut-c1" style={{ fontSize: fs }}>{centerAmount}</text>
+        <text x={C} y={C + 14} textAnchor="middle" className="donut-c2">{h ? `${formatShare(h.share)} · ${h.name.length > 18 ? `${h.name.slice(0, 17)}…` : h.name}` : 'Total'}</text>
+      </svg>
+      <ul className="donut-legend">
+        {slices.map((s, i) => (
+          <li key={s.name} className={hover === i ? 'on' : undefined} onPointerEnter={() => setHover(i)} onPointerLeave={() => setHover(null)}>
+            <i style={{ background: s.color }} aria-hidden="true" />
+            <span className="n" title={s.name}>{s.name}</span>
+            <span className="v num">{money(s.value)}</span>
+            <span className="p num">{formatShare(s.share)}</span>
+          </li>
+        ))}
+      </ul>
+      {(model.grouped || model.hasHidden) && (
+        <details className="donut-all">
+          <summary>View all {rows.length} as a table</summary>
+          <div className="table-wrap"><table><thead><tr><th>Name</th><th className="right">Amount</th></tr></thead>
+            <tbody>{rows.map((r) => <tr key={r.name}><td>{r.name}</td><td className="right num">{money(r.value)}</td></tr>)}</tbody></table></div>
+          {model.hasHidden && <p className="muted small">Zero or negative amounts (for example returns bigger than sales) are listed here but not drawn in the donut.</p>}
+        </details>
+      )}
+    </div>
+  );
+}

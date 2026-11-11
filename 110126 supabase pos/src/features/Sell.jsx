@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { repo } from '../data/repo.js';
 import { computeSale } from '../lib/tax.js';
 import { fromCents, fromMilli, formatQuantity, parseAmount, parseQuantity, toCents } from '../lib/money.js';
@@ -18,7 +18,9 @@ export default function Sell() {
   const [discType, setDiscType] = useState('percent');
   const [discText, setDiscText] = useState('');
   const [customerId, setCustomerId] = useState('');
-  const [channelId, setChannelId] = useState('');
+  // the channel called In-store (or In store) is chosen for every new sale; staff can still pick another one
+  const defaultChannelId = channels.find((c) => c.active && /^in[\s-]*store$/i.test(String(c.name).trim()))?.id || '';
+  const [channelId, setChannelId] = useState(defaultChannelId);
   const [payMode, setPayMode] = useState('full'); // full | partial | later
   const [methodId, setMethodId] = useState(methods.find((m) => m.active)?.id || '');
   const [partialText, setPartialText] = useState('');
@@ -31,6 +33,19 @@ export default function Sell() {
   // One id per sale attempt: if the network drops and the cashier presses Charge again, the SAME id is sent,
   // so the sale cannot be recorded twice.
   const attempt = useRef({ saleId: newId(), paymentId: newId() });
+
+  // Phones and tablets show the cart under the products. This remembers whether the cart is on screen, so a floating
+  // "View cart" button can take the cashier straight to it (and gets out of the way once they are there).
+  const cartRef = useRef(null);
+  const [cartSeen, setCartSeen] = useState(false);
+  useEffect(() => {
+    const el = cartRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return undefined;
+    const io = new IntersectionObserver(([entry]) => setCartSeen(entry.isIntersecting), { rootMargin: '0px 0px -35% 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  const goToCart = () => cartRef.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
 
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
   const active = useMemo(() => products.filter((p) => p.active), [products]);
@@ -133,7 +148,7 @@ export default function Sell() {
         received: showCash && receivedCents != null ? receivedCents : null, change: changeDue, pendingUpload: !!res.offline,
       });
       toast(res.offline ? 'Saved on this device (no internet). It uploads by itself.' : res.duplicate ? 'This sale was already recorded.' : 'Sale recorded', 'good');
-      setCart([]); setDiscText(''); setCustomerId(''); setPartialText(''); setReceived(''); setNote(''); setPayMode('full');
+      setCart([]); setDiscText(''); setCustomerId(''); setChannelId(defaultChannelId); setPartialText(''); setReceived(''); setNote(''); setPayMode('full');
       attempt.current = { saleId: newId(), paymentId: newId() };
       reload();
     } catch (e) {
@@ -144,7 +159,7 @@ export default function Sell() {
   return (
     <>
       <PageHead title="Sell" />
-      <div className="sell">
+      <div className={`sell${cart.length ? ' has-fab' : ''}`}>
         <section aria-label="Products">
           <input className="input" type="search" placeholder="Search or scan a barcode, press Enter to add" aria-label="Search products" value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={onSearchKey} />
           <div className="chips" role="group" aria-label="Categories">
@@ -165,7 +180,7 @@ export default function Sell() {
             })}</div>}
         </section>
 
-        <aside className="card cart" aria-label="Current sale">
+        <aside className="card cart" aria-label="Current sale" ref={cartRef} id="checkout">
           <h2>Current sale</h2>
           {!cart.length ? <div className="empty">Tap a product to add it.</div> : cart.map((l, i) => {
             const p = byId.get(l.productId);
@@ -223,6 +238,12 @@ export default function Sell() {
           </>}
         </aside>
       </div>
+      {cart.length > 0 && !cartSeen && (
+        <button type="button" className="cartfab" onClick={goToCart} aria-label={`View cart and charge: ${cart.length} ${cart.length === 1 ? 'item' : 'items'}, total ${money(calc.total)}`}>
+          <span className="cartfab-l"><span className="cartfab-n" aria-hidden="true">{cart.length}</span> View cart &amp; charge</span>
+          <span className="num">{money(calc.total)}</span>
+        </button>
+      )}
       {receipt && <ReceiptDialog receipt={receipt} onClose={() => setReceipt(null)} />}
       {newCustomer && <CustomerDialog onClose={() => setNewCustomer(false)} onSaved={(c) => { setCustomerId(c.id); reload(); }} />}
     </>

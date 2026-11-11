@@ -4,7 +4,7 @@ import { bucketSeries, describeRange } from '../lib/dates.js';
 import { dashboardFigures } from '../lib/metrics.js';
 import { formatPercent, toCents } from '../lib/money.js';
 import { useApp } from '../ui/context.js';
-import { BarList, LineChart, TREND_SERIES } from '../ui/charts.jsx';
+import { BarList, DonutChart, LineChart, TREND_SERIES } from '../ui/charts.jsx';
 import { ErrorBox, Loading, PageHead, Tip, useLoad } from '../ui/kit.jsx';
 import { COMPARE_NAME, PeriodBar, periodSentence, usePeriod } from '../ui/period.jsx';
 
@@ -116,13 +116,13 @@ function Body({ fig, data, chart, range, prev, preset, today, money, locale }) {
         <section className="card"><h2>Top items by net sales</h2>
           <BarList rows={data.top_by_net_sales.map((r) => ({ name: r.name, value: toCents(r.net_sales) }))} money={money} empty="No items sold in this period." /></section>
         <section className="card"><h2>Net sales by category</h2>
-          <BarList rows={data.by_category.map((r) => ({ name: r.name, value: toCents(r.net_sales) }))} money={money} /></section>
+          <DonutChart rows={data.by_category.map((r) => ({ name: r.name, value: toCents(r.net_sales) }))} money={money} ariaLabel="Net sales by category" /></section>
         <section className="card"><h2>Sales channels</h2>
-          <BarList rows={data.by_channel.map((r) => ({ name: r.name, value: toCents(r.net_sales) }))} money={money} /></section>
+          <DonutChart rows={data.by_channel.map((r) => ({ name: r.name, value: toCents(r.net_sales) }))} money={money} ariaLabel="Sales by channel" /></section>
         <section className="card"><h2>Payments by method</h2>
-          <BarList rows={data.by_payment_method.map((r) => ({ name: r.name, value: toCents(r.amount) }))} money={money} /></section>
+          <DonutChart rows={data.by_payment_method.map((r) => ({ name: r.name, value: toCents(r.amount) }))} money={money} ariaLabel="Payments by method" /></section>
         <section className="card"><h2>Expenses by category</h2>
-          <BarList rows={data.expenses_by_category.map((r) => ({ name: r.name, value: toCents(r.amount) }))} money={money} empty="No expenses in this period." /></section>
+          <DonutChart rows={data.expenses_by_category.map((r) => ({ name: r.name, value: toCents(r.amount) }))} money={money} ariaLabel="Expenses by category" empty="No expenses in this period." /></section>
       </div>
 
       {data.low_stock.length > 0 && (
