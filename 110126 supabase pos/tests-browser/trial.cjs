@@ -27,6 +27,9 @@ const check = (name, ok, detail = '') => { if (ok) { passed++; console.log('  ok
   check('owner has no trial banner', await page.getByText('Trial mode.').count() === 0);
   check('owner has no Start Fresh button', await page.getByRole('button', { name: 'Start Fresh' }).count() === 0);
   check('no trial call was made for the owner', !(await db()).__trial);
+  await page.evaluate(() => { location.hash = '#/account'; });
+  await page.getByLabel('New password').waitFor();
+  check('owner still has the change-password form', await page.getByRole('button', { name: 'Save new password' }).isVisible());
   await page.getByRole('link', { name: 'Team' }).click();
   check('owner still has live Team controls', await page.getByRole('button', { name: 'Switch off' }).first().isEnabled());
   await page.getByRole('link', { name: 'Settings' }).click();
@@ -51,6 +54,11 @@ const check = (name, ok, detail = '') => { if (ok) { passed++; console.log('  ok
   check('every Team button is disabled', (await page.getByRole('button', { name: /Switch off|Activate/ }).evaluateAll((els) => els.every((e) => e.disabled))) === true);
   check('no role dropdowns', await page.locator('select').count() === 0);
   check('real team members are not shown', await page.getByText('Carl Cashier').count() === 0 && await page.getByText('Olivia Owner').count() === 0);
+
+  console.log('Password is locked for trial');
+  await page.evaluate(() => { location.hash = '#/account'; });
+  await page.getByText('The password is locked on trial accounts', { exact: false }).waitFor();
+  check('trial has no change-password form', await page.getByLabel('New password').count() === 0 && await page.getByRole('button', { name: 'Save new password' }).count() === 0);
 
   console.log('Settings: only the trial name');
   await page.getByRole('link', { name: 'Settings' }).click();

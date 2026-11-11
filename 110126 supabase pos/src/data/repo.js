@@ -93,6 +93,7 @@ export const repo = {
   async trialSetBusinessName(name) { return run(sb().rpc('trial_set_business_name', { p_name: name })); },
   /** Change the signed-in person's own password (also used after clicking an email reset link). */
   async updatePassword(password) {
+    if (trialMode) throw new Error('The password is locked on trial accounts.');
     return run(sb().auth.updateUser({ password }));
   },
   async resetPassword(email) {

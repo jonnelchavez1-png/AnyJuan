@@ -5,7 +5,7 @@ import { useApp } from '../ui/context.js';
 import { Badge, Field, PageHead, PasswordInput } from '../ui/kit.jsx';
 
 export default function Account() {
-  const { profile, user, toast } = useApp();
+  const { profile, user, toast, trial } = useApp();
   const [pw, setPw] = useState(''); const [pw2, setPw2] = useState('');
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const save = async (e) => {
@@ -26,6 +26,11 @@ export default function Account() {
           <p className="muted">{user.email}</p>
           <p><Badge tone="good">{profile.role}</Badge></p>
         </section>
+        {trial ? (
+          <section className="card"><h2>Change my password</h2>
+            <p className="muted">The password is locked on trial accounts, so the same trial login keeps working for the next person. Real accounts can change their password here.</p>
+          </section>
+        ) : (
         <form className="card" onSubmit={save}><h2>Change my password</h2>
           <p className="muted small">Use at least 8 characters with letters. Do not reuse a password from another website.</p>
           {error && <div className="notice bad" role="alert">{error}</div>}
@@ -33,6 +38,7 @@ export default function Account() {
           <Field label="Type it again" id="acc2"><PasswordInput id="acc2" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></Field>
           <button className="btn" disabled={busy || !pw}>{busy ? 'Saving…' : 'Save new password'}</button>
         </form>
+        )}
       </div>
     </>
   );
