@@ -31,7 +31,7 @@ const check = (name, ok, detail = '') => { if (ok) { passed++; console.log('  ok
   await login('owner@example.com');
   await page.getByRole('heading', { name: 'Dashboard' }).waitFor();
   check('owner lands on the dashboard', true);
-  check('empty dashboard says so, not zeros pretending to be data', await page.getByText('No sales or expenses in this period yet').isVisible());
+  check('empty dashboard says so, not zeros pretending to be data', await page.getByText('No sales or expenses in this period yet').waitFor({ timeout: 8000 }).then(() => true, () => false));
   check('margin shows a dash when there are no sales', (await page.locator('.kpi', { hasText: 'Gross profit' }).first().innerText()).includes('Margin –'));
 
   console.log('Tax settings');

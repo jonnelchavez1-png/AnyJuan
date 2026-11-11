@@ -38,6 +38,7 @@ async function run(promise) {
 }
 
 const sb = () => getClient();
+let trialMode = false; // true while a trial account is signed in
 
 /**
  * Read EVERY row of a query, one page at a time (the server hands out at most 1000 rows per request).
@@ -78,9 +79,18 @@ export const repo = {
     return run(sb().auth.signUp({ email: email.trim(), password, options: { data: { name: name.trim() } } }));
   },
   async signOut() {
+    // A trial account's temporary workspace is deleted the moment the person signs out (the server also sweeps expired ones).
+    if (trialMode) { try { await withTimeout(Promise.resolve(sb().rpc('trial_end')), 8000); } catch { /* the scheduled sweep will clean up */ } trialMode = false; offline.setTrial(false); }
     await offline.onSignOut();
     await sb().auth.signOut();
   },
+
+  // ---------- trial sandbox (only used by accounts marked as "trial"; see supabase/update-trial.sql) ----------
+  setTrialMode(on) { trialMode = !!on; offline.setTrial(!!on); },
+  async trialBegin() { return run(sb().rpc('trial_begin')); },
+  async trialStartFresh() { return run(sb().rpc('trial_start_fresh')); },
+  async trialHeartbeat() { return run(sb().rpc('trial_heartbeat')); },
+  async trialSetBusinessName(name) { return run(sb().rpc('trial_set_business_name', { p_name: name })); },
   /** Change the signed-in person's own password (also used after clicking an email reset link). */
   async updatePassword(password) {
     return run(sb().auth.updateUser({ password }));

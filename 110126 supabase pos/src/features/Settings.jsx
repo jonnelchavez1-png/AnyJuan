@@ -3,6 +3,7 @@ import { repo } from '../data/repo.js';
 import { useApp } from '../ui/context.js';
 import { Field, PageHead } from '../ui/kit.jsx';
 import { PAPERS, printHtml, remember } from '../lib/print.js';
+import { TrialNameCard } from './Trial.jsx';
 
 // Currencies with 2 decimals (the app stores amounts to the cent). Others such as JPY or VND are not offered.
 const CURRENCIES = ['PHP', 'USD', 'EUR', 'GBP', 'SGD', 'AUD', 'CAD', 'HKD', 'THB', 'MYR', 'INR', 'AED', 'SAR'];
@@ -20,14 +21,15 @@ const REGIONS = [
 ];
 
 export default function Settings() {
-  const { can } = useApp();
+  const { can, trial } = useApp();
   return (
     <>
       <PageHead title="Settings" />
       <div className="stack">
         <PrinterCard />
-        {can('editBusiness') && <BusinessCard />}
-        {can('editBusiness') && <TaxCard />}
+        {trial && <TrialNameCard />}
+        {!trial && can('editBusiness') && <BusinessCard />}
+        {!trial && can('editBusiness') && <TaxCard />}
         <div className="panels">
           <ListCard title="Product categories" table="categories" listKey="categories" />
           <ListCard title="Sales channels" table="sales_channels" listKey="channels" />

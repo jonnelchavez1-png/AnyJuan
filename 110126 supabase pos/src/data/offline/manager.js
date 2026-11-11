@@ -29,7 +29,7 @@ let state = Object.freeze({
 const listeners = new Set();
 const setState = (patch) => { state = Object.freeze({ ...state, ...patch }); listeners.forEach((f) => f()); };
 
-let store = null; let outbox = null; let sync = null; let started = false; let skewMs = 0; let timer = null;
+let store = null; let outbox = null; let sync = null; let started = false; let skewMs = 0; let timer = null; let trial = false;
 const syncedHandlers = new Set();
 
 const isOffline = () => (typeof navigator !== 'undefined' && navigator.onLine === false) || !state.online;
@@ -141,6 +141,13 @@ export const offline = {
     if (user) ls.set(LAST_USER_KEY, JSON.stringify({ id: user.id, email: user.email || '' }));
     if (!same) refreshCounts().then(() => { if (state.online) runSync(); });
   },
+  /** Trial accounts: selling offline is switched off (their temporary shop is deleted at sign-out, so a queued sale could never belong anywhere). */
+  setTrial(on) { trial = !!on; },
+  /** Forget every saved copy of the screens (used when a trial shop is replaced, so no old figures can show up). */
+  async clearCache() {
+    if (!store) return;
+    for (const row of await store.getAll('cache')) await store.del('cache', row.key);
+  },
   rememberedUser() { try { return JSON.parse(ls.get(LAST_USER_KEY) || 'null'); } catch { return null; } },
   /** Signing out wipes the saved reports (they hold money figures) but NEVER the sales still waiting to upload. */
   async onSignOut() {
@@ -156,6 +163,7 @@ export const offline = {
 
   /** Save a sale on this device. `info` = what the Sell screen worked out (prices and tax as the customer saw them). */
   async queueSale({ sale, items, payments, info }) {
+    if (trial) throw new Error('Selling offline is switched off in the trial. Please reconnect to the internet.');
     if (!outbox || state.storage !== 'indexeddb') {
       throw new Error('This browser cannot keep sales on the device, so selling offline is switched off. Reconnect to the internet, or open the app in a normal (not private) window.');
     }

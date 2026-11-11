@@ -26,6 +26,7 @@ A point of sale, stock and money tracker for **one business** (any kind of shop 
 | `supabase/setup.sql` | The whole database: tables, security rules, sale / void / payment / stock functions, dashboard function. Run once. |
 | `supabase/sample_data.sql` | Optional: 26 grocery items to try the app. |
 | `supabase/verify.sql` | Optional self-check of the database rules; rolls itself back. |
+| `supabase/update-trial.sql`, `supabase/verify-trial.sql` | Optional, ONLY for the public trial copy: private temporary workspaces for trial users, with a self-check. See `docs/TRIAL.md`. Never run on a client's POS. |
 | `src/lib/` | Money, tax, dates and dashboard maths (plain functions, unit tested). |
 | `src/data/repo.js` | The only file that talks to Supabase (this is where offline would plug in). |
 | `src/features/`, `src/ui/` | The screens and shared pieces. |

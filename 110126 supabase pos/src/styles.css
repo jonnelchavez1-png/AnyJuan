@@ -335,3 +335,9 @@ input::-ms-reveal, input::-ms-clear { display: none; }
 .bulkbar { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; padding: .6rem .9rem; margin-bottom: .75rem; }
 th.pick, td.pick { width: 2.4rem; padding-right: 0; }
 th.pick input, td.pick input { width: 1.15rem; height: 1.15rem; cursor: pointer; }
+
+/* ---- trial sandbox banner (only trial accounts see it) ---- */
+.trialbar { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; padding: .6rem .85rem; margin-bottom: .75rem; border-radius: 10px;
+  background: var(--warn-bg); color: #5c3b00; border: 1px solid #ecd29f; font-size: .92rem; }
+.trialbar .btn { flex: none; }
+@media print { .trialbar { display: none; } }

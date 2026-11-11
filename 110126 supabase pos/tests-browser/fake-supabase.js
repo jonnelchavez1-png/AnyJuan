@@ -9,6 +9,7 @@ const uid = () => crypto.randomUUID();
 const OWNER = { id: '00000000-0000-4000-8000-000000000001', email: 'owner@example.com' };
 const CASH = { id: '00000000-0000-4000-8000-000000000003', email: 'cashier@example.com' };
 const WAIT = { id: '00000000-0000-4000-8000-000000000002', email: 'new@example.com' };
+const TRIAL = { id: '00000000-0000-4000-8000-000000000009', email: 'trial@example.com' };
 
 const cat = (name, n) => ({ id: uid(), name, sort_order: n, active: true });
 const db = {
@@ -17,6 +18,7 @@ const db = {
     { id: OWNER.id, name: 'Olivia Owner', email: OWNER.email, role: 'owner', active: true, created_at: '2026-01-01T00:00:00Z' },
     { id: CASH.id, name: 'Carl Cashier', email: CASH.email, role: 'cashier', active: true, created_at: '2026-01-15T00:00:00Z' },
     { id: WAIT.id, name: 'Nina New', email: WAIT.email, role: 'cashier', active: false, created_at: '2026-02-01T00:00:00Z' },
+    { id: TRIAL.id, name: 'Tina Trial', email: TRIAL.email, role: 'owner', active: true, account_type: 'trial', created_at: '2026-03-01T00:00:00Z' },
   ],
   categories: [cat('Drinks', 1), cat('Snacks', 2)],
   expense_categories: [cat('Rent', 1), cat('Supplies', 2)],
@@ -179,6 +181,12 @@ function rpc(name, a) {
     const v = db.sales.filter((s) => s.status === 'voided' && inR(s));
     return { range: { from: a.p_from, to: a.p_to, timezone: 'Asia/Manila' }, totals: tot, by_rate: ss.length ? [{ tax_name: 'VAT', tax_rate: 12, tax_mode: 'inclusive', orders: ss.length, taxable_sales: tot.taxable_sales, not_taxable_sales: tot.not_taxable_sales, tax: tot.tax_collected }] : [], daily: days, voided: { orders: v.length, billed: sum(v, (s) => num(s.total)), tax: sum(v, (s) => num(s.tax_amount)) } };
   }
+  // ----- trial sandbox (the real rules are checked on real Postgres by supabase/verify-trial.sql) -----
+  if (name === 'trial_begin') { db.__trial = db.__trial || { calls: [], live: null }; db.__trial.calls.push(name); if (!db.__trial.live) db.__trial.live = { session_id: uid(), mode: 'sample', business_name: null, expires_at: '2099-01-01T00:00:00Z' }; return db.__trial.live; }
+  if (name === 'trial_heartbeat') { db.__trial.calls.push(name); if (db.__trial.expired) throw new Error('Your trial session has ended. Please sign in again.'); return db.__trial.live; }
+  if (name === 'trial_start_fresh') { db.__trial.calls.push(name); ['products', 'customers', 'sales', 'sale_items', 'payments', 'expenses', 'inventory_movements', 'returns', 'return_items', 'shifts', 'cash_movements'].forEach((t) => { db[t].length = 0; }); db.__trial.live = { ...db.__trial.live, session_id: uid(), mode: 'empty' }; return db.__trial.live; }
+  if (name === 'trial_set_business_name') { db.__trial.calls.push(name); db.__trial.live = { ...db.__trial.live, business_name: String(a.p_name).trim() }; return db.__trial.live; }
+  if (name === 'trial_end') { db.__trial = db.__trial || { calls: [] }; db.__trial.calls.push(name); db.__trial.live = null; return { ok: true, trial: true }; }
   if (name === 'get_dashboard') return dashboard(a);
   // ----- cash drawer (mirrors supabase private.shift_figures; the real SQL is checked by tests-db/drawer.mjs) -----
   if (['current_shift', 'get_shift', 'open_shift', 'add_cash_movement', 'close_shift'].includes(name)) return drawer(name, a);
@@ -249,7 +257,7 @@ function dashboard({ p_from, p_to, p_prev_from, p_prev_to }) {
 
 export function createClient() {
   if (window.__fakePersist) restore();
-  window.__fake = { triggerRecovery: (email) => setSession({ user: [OWNER, CASH, WAIT].find((x) => x.email === email) }, 'PASSWORD_RECOVERY'), db, setUser: (email) => { fail().user = email; } };
+  window.__fake = { triggerRecovery: (email) => setSession({ user: [OWNER, CASH, WAIT, TRIAL].find((x) => x.email === email) }, 'PASSWORD_RECOVERY'), db, setUser: (email) => { fail().user = email; } };
   return {
     from: (n) => new Q(n),
     rpc: (name, args) => Promise.resolve().then(() => { if (netDown()) throw new TypeError('Failed to fetch'); try { const out = rpc(name, args); save(); if (name === 'create_sale' && fail().dropReply > 0) { fail().dropReply -= 1; throw new TypeError('Failed to fetch'); } return { data: out, error: null }; } catch (e) { if (e instanceof TypeError) throw e; return { data: null, error: { message: e.message } }; } }),
@@ -257,7 +265,7 @@ export function createClient() {
       getSession: async () => ({ data: { session } }), // (like the real one: works with no internet while the saved sign-in is still valid)
       onAuthStateChange: (cb) => { listeners.add(cb); return { data: { subscription: { unsubscribe: () => listeners.delete(cb) } } }; },
       signInWithPassword: async ({ email, password }) => {
-        const u = [OWNER, CASH, WAIT].find((x) => x.email === email);
+        const u = [OWNER, CASH, WAIT, TRIAL].find((x) => x.email === email);
         if (!u || password !== 'correct-horse') return { data: null, error: { message: 'Invalid login credentials' } };
         setSession({ user: u }); return { data: { session }, error: null };
       },

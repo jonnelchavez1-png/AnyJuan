@@ -19,6 +19,7 @@ import Offline from './features/Offline.jsx';
 import OfflineBar from './ui/OfflineBar.jsx';
 import { Brand } from './ui/Brand.jsx';
 import { offline } from './data/offline/manager.js';
+import { TrialBanner, TrialEnded, TrialTeam } from './features/Trial.jsx';
 
 const ROUTES = [
   { path: 'dashboard', label: 'Dashboard', icon: '▤', can: 'viewDashboard', view: Dashboard },
@@ -101,10 +102,37 @@ function Gate() {
   if (error && !profile) return <div className="auth"><div className="card stack"><ErrorBox error={error} onRetry={loadProfile} /><button className="btn secondary" onClick={() => repo.signOut()}>Sign out</button></div></div>;
   if (!profile) return checking ? <Loading label="Checking your account…" /> : <Waiting email={session.user.email} onCheck={loadProfile} onSignOut={() => repo.signOut()} checking={checking} />;
   if (!profile.active) return <Waiting email={profile.email} onCheck={loadProfile} onSignOut={() => repo.signOut()} checking={checking} />;
+  if (profile.account_type === 'trial') return <TrialGate user={session.user} profile={profile} />;
   return <Shell user={session.user} profile={profile} />;
 }
 
-function Shell({ user, profile }) {
+/** Trial accounts: get (or make) this person's temporary shop before showing the app, and keep it alive while they use it. */
+function TrialGate({ user, profile }) {
+  const [trial, setTrial] = useState(null);
+  const [error, setError] = useState('');
+  const [ended, setEnded] = useState(false);
+  const begin = useCallback(async () => {
+    setError('');
+    try { repo.setTrialMode(true); await offline.clearCache(); setTrial(await repo.trialBegin()); } catch (e) { setError(e.message); }
+  }, []);
+  useEffect(() => { begin(); }, [begin]);
+  useEffect(() => {
+    if (!trial) return undefined;
+    const beat = async () => {
+      if (document.visibilityState === 'hidden') return;
+      try { setTrial(await repo.trialHeartbeat()); } catch (e) { if (/session has ended/i.test(e.message)) setEnded(true); /* offline for a moment: try again later */ }
+    };
+    document.addEventListener('visibilitychange', beat); window.addEventListener('focus', beat);
+    const id = setInterval(beat, 5 * 60 * 1000);
+    return () => { document.removeEventListener('visibilitychange', beat); window.removeEventListener('focus', beat); clearInterval(id); };
+  }, [!!trial]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (ended) return <TrialEnded onSignOut={() => repo.signOut()} />;
+  if (error && !trial) return <div className="auth"><div className="card stack"><ErrorBox error={error} onRetry={begin} /><button className="btn secondary" onClick={() => repo.signOut()}>Sign out</button></div></div>;
+  if (!trial) return <Loading label="Getting your trial shop ready…" />;
+  return <Shell user={user} profile={profile} trial={trial} onTrialChange={setTrial} />;
+}
+
+function Shell({ user, profile, trial, onTrialChange }) {
   const [base, setBase] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [toasts, setToasts] = useState([]);
@@ -112,6 +140,8 @@ function Shell({ user, profile }) {
   const [period, setPeriod] = useState({ preset: 'month', custom: null }); // shared by Dashboard, Sales, Expenses, Tax report
   const [tick, setTick] = useState(0); // bumped after an upload so the open screen re-reads its numbers
   const hash = useHash();
+  const trialRef = useRef(trial);
+  trialRef.current = trial;
 
   const loadBase = useCallback(async () => {
     try {
@@ -120,7 +150,8 @@ function Shell({ user, profile }) {
         repo.listLookup('sales_channels'), repo.listLookup('payment_methods'), repo.listProducts(), repo.listCustomers(),
       ]);
       if (!business) throw new Error('The business record is missing. Run supabase/setup.sql first.');
-      setBase({ business, categories, expenseCategories, channels, methods, products, customers });
+      const shownName = trialRef.current?.business_name; // a trial shop shows the name its user typed (the real record is never changed)
+      setBase({ business: shownName ? { ...business, name: shownName } : business, categories, expenseCategories, channels, methods, products, customers });
       setLoadError('');
     } catch (e) { setLoadError(e.message); }
   }, []);
@@ -174,12 +205,26 @@ function Shell({ user, profile }) {
     [business?.currency, business?.locale],
   );
 
-  const ctx = useMemo(() => base && ({ ...base, user, profile, role, can, toast, money, period, setPeriod, reload: loadBase }), [base, user, profile, role, can, toast, money, period, loadBase]);
+  // Trial accounts only: the Start Fresh button and the trial shop's own business name.
+  const trialCtx = useMemo(() => (trial ? {
+    session: trial,
+    startFresh: async () => {
+      const t = await repo.trialStartFresh();
+      trialRef.current = t; onTrialChange(t);
+      await offline.clearCache();
+      window.location.hash = '#/dashboard';
+      await loadBase(); setTick((x) => x + 1);
+      toast('Fresh start: your trial shop is now empty.', 'good');
+    },
+    setName: async (name) => { const t = await repo.trialSetBusinessName(name); trialRef.current = t; onTrialChange(t); await loadBase(); },
+  } : null), [trial, onTrialChange, loadBase, toast]);
+
+  const ctx = useMemo(() => base && ({ ...base, user, profile, role, can, toast, money, period, setPeriod, reload: loadBase, trial: trialCtx }), [base, user, profile, role, can, toast, money, period, loadBase, trialCtx]);
 
   if (loadError) return <div className="auth"><div className="card stack"><ErrorBox error={loadError} onRetry={loadBase} /><button className="btn secondary" onClick={() => repo.signOut()}>Sign out</button></div></div>;
   if (!ctx) return <Loading label="Loading your business…" />;
 
-  const View = route.view;
+  const View = trial && route.path === 'team' ? TrialTeam : route.view; // trial accounts may look at the Team page but not change anything
   return (
     <AppContext.Provider value={ctx}>
       <div className="app">
@@ -195,10 +240,10 @@ function Shell({ user, profile }) {
               <a key={r.path} href={`#/${r.path}`} aria-current={r === route ? 'page' : undefined}><span aria-hidden="true">{r.icon}</span>{r.label}</a>
             ))}
           </nav>
-          <div className="who">{profile.name}<br /><span style={{ textTransform: 'capitalize' }}>{role}</span></div>
+          <div className="who">{profile.name}<br /><span style={{ textTransform: 'capitalize' }}>{trial ? 'Trial account' : role}</span></div>
           <button className="btn ghost small" onClick={() => repo.signOut()}>Sign out</button>
         </aside>
-        <main className="main" id="main"><OfflineBar /><View key={`${route.path}-${tick}`} /></main>
+        <main className="main" id="main">{trial && <TrialBanner />}<OfflineBar /><View key={`${route.path}-${tick}`} /></main>
       </div>
       <div className="toasts" aria-live="polite">{toasts.map((t) => <div key={t.id} className={`toast ${t.tone}`}>{t.message}</div>)}</div>
     </AppContext.Provider>
